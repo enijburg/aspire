@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/playground/">
+    <Project Path="playground/AspireGroupSupport/AspireGroupSupport.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Aspire.Hosting.Groups/Aspire.Hosting.Groups.csproj" />
   </Folder>
