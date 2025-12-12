@@ -137,65 +137,81 @@ internal sealed class AggregateStatusFromChildrenService(
 #pragma warning restore CS0618 // Type or member is obsolete
 
         // ---- 1) Failure dominates ----
-        // RuntimeUnhealthy isn't in TerminalStates, but it's effectively a failure to run.
         if (nonHiddenStates.Any(s =>
                 s == KnownResourceStates.FailedToStart ||
                 s == KnownResourceStates.RuntimeUnhealthy ||
                 s == KnownResourceStates.Exited))
         {
-            // Pick one canonical parent failure state.
-            // Alternative: return Exited if any exited and none FailedToStart, etc.
-            return new ResourceStateSnapshot(KnownResourceStates.FailedToStart, KnownResourceStateStyles.Error);
+            return new ResourceStateSnapshot(
+                KnownResourceStates.FailedToStart,
+                KnownResourceStateStyles.Error);
         }
 
-        // ---- 2) Stopping dominates over in-progress ----
+        // ---- 2) Stopping dominates ----
         if (nonHiddenStates.Any(s => s == KnownResourceStates.Stopping))
         {
-            return new ResourceStateSnapshot(KnownResourceStates.Stopping, KnownResourceStateStyles.Info);
+            return new ResourceStateSnapshot(
+                KnownResourceStates.Stopping,
+                KnownResourceStateStyles.Info);
         }
 
-        // ---- 3) In-progress states ----
+        // ---- 3) In-progress dominates steady ----
         if (nonHiddenStates.Any(s =>
                 s == KnownResourceStates.Starting ||
                 s == KnownResourceStates.Waiting ||
                 s == KnownResourceStates.NotStarted))
         {
-            // If *all* are NotStarted you might prefer NotStarted; choose your UX.
             if (nonHiddenStates.All(s => s == KnownResourceStates.NotStarted))
             {
-                return new ResourceStateSnapshot(KnownResourceStates.NotStarted, KnownResourceStateStyles.Info);
+                return new ResourceStateSnapshot(
+                    KnownResourceStates.NotStarted,
+                    KnownResourceStateStyles.Info);
             }
 
             if (nonHiddenStates.All(s => s == KnownResourceStates.Waiting))
             {
-                return new ResourceStateSnapshot(KnownResourceStates.Waiting, KnownResourceStateStyles.Info);
+                return new ResourceStateSnapshot(
+                    KnownResourceStates.Waiting,
+                    KnownResourceStateStyles.Info);
             }
 
-            return new ResourceStateSnapshot(KnownResourceStates.Starting, KnownResourceStateStyles.Info);
+            return new ResourceStateSnapshot(
+                KnownResourceStates.Starting,
+                KnownResourceStateStyles.Info);
         }
 
-        // ---- 4) Homogeneous "steady" states ----
-        if (nonHiddenStates.All(s => s == KnownResourceStates.Running))
+        // ---- 4) Steady states ----
+        var anyRunning = nonHiddenStates.Any(s => s == KnownResourceStates.Running);
+        var allRunning = nonHiddenStates.All(s => s == KnownResourceStates.Running);
+        var allFinished = nonHiddenStates.All(s => s == KnownResourceStates.Finished);
+        var allActive = nonHiddenStates.All(s => s == KnownResourceStates.Active);
+
+        if (anyRunning)
         {
-            return new ResourceStateSnapshot(KnownResourceStates.Running, KnownResourceStateStyles.Success);
+            return allRunning
+                ? new ResourceStateSnapshot(
+                    KnownResourceStates.Running,
+                    KnownResourceStateStyles.Success)
+                : new ResourceStateSnapshot(
+                    "PartiallyRunning",
+                    KnownResourceStateStyles.Success);
         }
 
-        if (nonHiddenStates.All(s => s == KnownResourceStates.Finished))
+        if (allFinished)
         {
-            return new ResourceStateSnapshot(KnownResourceStates.Finished, KnownResourceStateStyles.Success);
+            return new ResourceStateSnapshot(
+                KnownResourceStates.Finished,
+                KnownResourceStateStyles.Success);
         }
 
-        if (nonHiddenStates.All(s => s == KnownResourceStates.Active))
+        if (allActive)
         {
-            // Active is used for resources without a lifetime; treat as success/steady.
-            return new ResourceStateSnapshot(KnownResourceStates.Active, KnownResourceStateStyles.Success);
+            return new ResourceStateSnapshot(
+                KnownResourceStates.Active,
+                KnownResourceStateStyles.Success);
         }
-
-        // ---- 5) Mixed terminal-success-ish states ----
-        // Example: some Finished, some Running => Degraded (or choose Running/Finished if you want).
-        // Example: some Active, some Running => Degraded by default.
-        // If you want a different behavior, add explicit rules here.
 
         return new ResourceStateSnapshot("Degraded", KnownResourceStateStyles.Warn);
     }
+
 }

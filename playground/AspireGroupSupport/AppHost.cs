@@ -8,7 +8,7 @@ builder.Services.AddAggregateParentStatusFromChildren();
 var group = builder.AddGroup("my-group");
 
 // Just to demonstrate parent relationship:
-var step = builder.AddExecutable("setup", "powershell.exe", builder.AppHostDirectory)
+var step1 = builder.AddExecutable("step1", "powershell.exe", builder.AppHostDirectory)
         .WithArgs(
             "-NoLogo",
             "-NoProfile",
@@ -16,6 +16,17 @@ var step = builder.AddExecutable("setup", "powershell.exe", builder.AppHostDirec
             "-ExecutionPolicy", "Bypass",
             "-Command",
             "Write-Host 'Setup...'; Start-Sleep -Seconds 3; Write-Host 'Done.'")
+    .WithParentRelationship(group);
+
+var step2 = builder.AddExecutable("step2", "powershell.exe", builder.AppHostDirectory)
+    .WithArgs(
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy", "Bypass",
+        "-Command",
+        "Write-Host 'Setup...'; Start-Sleep -Seconds 3; Write-Host 'Done.'")
+    .WaitForCompletion(step1)
     .WithParentRelationship(group);
 
 builder.Build().Run();
