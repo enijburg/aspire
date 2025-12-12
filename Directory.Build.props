@@ -1,0 +1,44 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>preview</LangVersion>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <SharedDir>$(MSBuildThisFileDirectory)/src/Shared/</SharedDir>
+    <ComponentsDir>$(MSBuildThisFileDirectory)/src/Components/</ComponentsDir>
+    <TestsSharedDir>$([MSBuild]::NormalizeDirectory($(MSBuildThisFileDirectory), 'tests', 'Shared'))</TestsSharedDir>
+    <TestsSharedRepoTestingDir>$([MSBuild]::NormalizeDirectory($(TestsSharedDir), 'RepoTesting'))</TestsSharedRepoTestingDir>
+    <VendoringDir>$(MSBuildThisFileDirectory)/src/Vendoring/</VendoringDir>
+    <PackageIconFullPath>$(SharedDir)Aspire_icon_256.png</PackageIconFullPath>
+    <PackageProjectUrl>https://github.com/enijburg/aspire</PackageProjectUrl>
+    <WarnOnPackingNonPackableProject>false</WarnOnPackingNonPackableProject>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
+    <DebugType>embedded</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <StrongNameKeyId>Open</StrongNameKeyId>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UsePublicApiAnalyzers>true</UsePublicApiAnalyzers>
+    <!-- Redirect test logs into a subfolder -->
+    <TestResultsLogDir>$([MSBuild]::NormalizeDirectory('$(ArtifactsLogDir)', 'TestLogs'))</TestResultsLogDir>
+
+    <!-- Issue: https://github.com/dotnet/aspire/issues/8488 -->
+    <!-- xUnit1051: Calls to methods which accept CancellationToken should use TestContext.Current.CancellationToken to allow test cancellation to be more responsive. -->
+    <!-- Issue: https://github.com/dotnet/aspire/issues/10175 -->
+    <!-- NU1510: The project does not reference any target framework and will not be restored. -->
+    <!-- TODO: Re-enable and remove this. -->
+    <NoWarn>$(NoWarn);xUnit1051;NU1510</NoWarn>
+  </PropertyGroup>
+
+  <!-- OS/Architecture properties for local development resources -->
+  <PropertyGroup>
+    <BuildOs Condition="$([MSBuild]::IsOsPlatform('Linux'))">linux</BuildOs>
+    <BuildOs Condition="$([MSBuild]::IsOsPlatform('OSX'))">darwin</BuildOs>
+    <BuildOs Condition=" '$(BuildOs)' == '' ">windows</BuildOs>
+    <BuildArch Condition=" '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X86' ">386</BuildArch>
+    <BuildArch Condition=" '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64' ">arm64</BuildArch>
+    <BuildArch Condition=" '$(BuildArch)' == '' ">amd64</BuildArch>
+  </PropertyGroup>
+
+</Project>

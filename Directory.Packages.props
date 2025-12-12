@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+    <!-- Enable central package management -->
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Aspire hosting extensions -->
+    <PackageVersion Include="Aspire.Hosting" Version="13.0.2" />
+
+    <!-- Common Microsoft.Extensions packages for .NET 10 -->
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.0" />
+  </ItemGroup>
+</Project>
