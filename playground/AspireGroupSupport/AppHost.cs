@@ -2,6 +2,8 @@ using Aspire.Hosting.Groups;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
+// make sure the group status reflects the status of its children
+builder.Services.AddAggregateParentStatusFromChildren();
 
 var group = builder.AddGroup("my-group");
 
@@ -15,9 +17,5 @@ var step = builder.AddExecutable("setup", "powershell.exe", builder.AppHostDirec
             "-Command",
             "Write-Host 'Setup...'; Start-Sleep -Seconds 3; Write-Host 'Done.'")
     .WithParentRelationship(group);
-
-
-
-
 
 builder.Build().Run();
