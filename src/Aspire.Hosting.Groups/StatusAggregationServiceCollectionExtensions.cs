@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Aspire.Hosting.Groups;
 
@@ -22,9 +21,7 @@ public static class StatusAggregationServiceCollectionExtensions
     /// </returns>
     public static AggregateStatusFromChildrenBuilder AddAggregateParentStatusFromChildren(this IServiceCollection services)
     {
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<
-            Microsoft.Extensions.Hosting.IHostedService,
-            AggregateStatusFromChildrenService>());
+        services.AddHostedService<AggregateStatusFromChildrenService>();
 
         // By default, only monitor ResourceExtensions.GroupResource as parents.
         return new AggregateStatusFromChildrenBuilder(services)
