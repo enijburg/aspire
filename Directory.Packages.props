@@ -6,7 +6,7 @@
 
   <ItemGroup>
     <!-- Aspire hosting extensions -->
-    <PackageVersion Include="Aspire.Hosting" Version="13.0.2" />
+    <PackageVersion Include="Aspire.Hosting" Version="13.1.0" />
 
     <!-- Common Microsoft.Extensions packages for .NET 10 -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
