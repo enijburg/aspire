@@ -4,7 +4,6 @@
     <Project Path="playground/JwtAuth/JwtAuth.AppHost/JwtAuth.AppHost.csproj" />
     <Project Path="playground/JwtAuth/JwtAuth.ApiOne/JwtAuth.ApiOne.csproj" />
     <Project Path="playground/JwtAuth/JwtAuth.ApiTwo/JwtAuth.ApiTwo.csproj" />
-    <Project Path="playground/JwtAuth/JwtAuth.ServiceDefaults/JwtAuth.ServiceDefaults.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Aspire.Hosting.Groups/Aspire.Hosting.Groups.csproj" />
