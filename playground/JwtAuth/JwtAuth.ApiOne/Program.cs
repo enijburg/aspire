@@ -1,32 +1,12 @@
 using System.Security.Claims;
-using System.Text;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddOpenApi();
 
-var jwtSigningKey = builder.Configuration["Jwt:SigningKey"]
-    ?? throw new InvalidOperationException("Jwt:SigningKey configuration is required.");
-
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = "JwtAuth.ApiOne",
-            ValidAudience = "JwtAuth",
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSigningKey))
-        };
-    });
-
+builder.Services.AddAuthentication().AddJwtBearer();
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
