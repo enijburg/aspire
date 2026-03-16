@@ -11,6 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\JwtAuth.ApiOne\JwtAuth.ApiOne.csproj" />
     <ProjectReference Include="..\JwtAuth.ApiTwo\JwtAuth.ApiTwo.csproj" />
+    <ProjectReference Include="..\..\..\src\Aspire.Hosting.DevJwt\Aspire.Hosting.DevJwt.csproj" IsAspireProjectResource="false" />
   </ItemGroup>
 
 </Project>

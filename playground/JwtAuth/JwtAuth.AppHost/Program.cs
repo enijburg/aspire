@@ -1,7 +1,10 @@
+using Aspire.Hosting.DevJwt;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
-var apiOne = builder.AddProject<Projects.JwtAuth_ApiOne>("api-one");
+var devJwt = builder.AddSharedDevJwtAuthority();
 
-var apiTwo = builder.AddProject<Projects.JwtAuth_ApiTwo>("api-two");
+builder.AddJwtProject<Projects.JwtAuth_ApiOne>("api-one", devJwt);
+builder.AddJwtProject<Projects.JwtAuth_ApiTwo>("api-two", devJwt);
 
 await builder.Build().RunAsync();

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using JwtAuth.ServiceDefaults;
 using Microsoft.AspNetCore.Authorization;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -6,8 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddOpenApi();
 
-builder.Services.AddAuthentication().AddJwtBearer();
-builder.Services.AddAuthorization();
+builder.Services.AddSharedDevJwtAuthentication();
 
 var app = builder.Build();
 
