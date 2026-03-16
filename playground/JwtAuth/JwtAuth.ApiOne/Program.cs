@@ -1,4 +1,3 @@
-using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -42,39 +41,6 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Issue a JWT token for demonstration purposes.
-// In production this would validate credentials against a user store.
-app.MapPost("/token", (TokenRequest request) =>
-{
-    if (request.Username == "demo" && request.Password == "password")
-    {
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSigningKey));
-        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-        var claims = new[]
-        {
-            new Claim(ClaimTypes.Name, request.Username),
-            new Claim(ClaimTypes.Role, "User"),
-            new Claim(JwtRegisteredClaimNames.Sub, request.Username),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-        };
-
-        var token = new JwtSecurityToken(
-            issuer: "JwtAuth.ApiOne",
-            audience: "JwtAuth",
-            claims: claims,
-            expires: DateTime.UtcNow.AddHours(1),
-            signingCredentials: credentials);
-
-        return Results.Ok(new { token = new JwtSecurityTokenHandler().WriteToken(token) });
-    }
-
-    return Results.Unauthorized();
-})
-.WithName("GetToken")
-.WithSummary("Issue a JWT bearer token")
-.AllowAnonymous();
-
 app.MapGet("/weatherforecast", [Authorize] () =>
 {
     var summaries = new[] { "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching" };
@@ -107,5 +73,3 @@ record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
 {
     public int TemperatureF => 32 + (int)(TemperatureC * 9 / 5.0);
 }
-
-record TokenRequest(string Username, string Password);
