@@ -28,10 +28,4 @@ public sealed class SharedDevJwtOptions
     /// Defaults to <see cref="SharedDevJwtAuthority.DefaultCurrentTokenSecret"/>.
     /// </summary>
     public string CurrentTokenSecretName { get; init; } = SharedDevJwtAuthority.DefaultCurrentTokenSecret;
-
-    /// <summary>
-    /// Gets or sets the user-secrets key under which the last-used claims JSON is stored.
-    /// Defaults to <see cref="SharedDevJwtAuthority.DefaultLastClaimsJsonSecret"/>.
-    /// </summary>
-    public string LastClaimsJsonSecretName { get; init; } = SharedDevJwtAuthority.DefaultLastClaimsJsonSecret;
 }

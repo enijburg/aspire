@@ -13,4 +13,9 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
   </ItemGroup>
 
+  <PropertyGroup>
+    <!-- IInteractionService and related types are currently preview/evaluation APIs -->
+    <NoWarn>$(NoWarn);ASPIREINTERACTION001</NoWarn>
+  </PropertyGroup>
+
 </Project>

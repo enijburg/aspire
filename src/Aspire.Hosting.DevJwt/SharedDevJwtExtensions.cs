@@ -119,8 +119,8 @@ public static partial class SharedDevJwtExtensions
             executeCommand: ctx => ExecuteGenerateJwtAsync(builder, ctx),
             commandOptions: new CommandOptions
             {
-                Description = "Generates a signed development JWT and stores it in user-secrets. " +
-                              "Customize claims by editing the DevJwt:Tokens:LastClaimsJson secret first.",
+                Description = "Interactively prompts for claims and generates a signed development JWT, " +
+                              "storing the result in user-secrets.",
                 IconName = "Key",
                 IconVariant = IconVariant.Filled,
                 IsHighlighted = true,
@@ -132,20 +132,86 @@ public static partial class SharedDevJwtExtensions
         IResourceBuilder<DevJwtAuthorityResource> resourceBuilder,
         ExecuteCommandContext context)
     {
-        var logger = context.ServiceProvider.GetRequiredService<ILogger<DevJwtAuthorityResource>>();
+        var interactionService = context.ServiceProvider.GetRequiredService<IInteractionService>();
+        var loggerService = context.ServiceProvider.GetRequiredService<ResourceLoggerService>();
+        var logger = loggerService.GetLogger(resourceBuilder.Resource);
+
+        var inputs = new List<InteractionInput>
+        {
+            new()
+            {
+                Name = "Subject",
+                InputType = InputType.Text,
+                Required = true,
+                Placeholder = "dev-user",
+            },
+            new()
+            {
+                Name = "Expiry",
+                InputType = InputType.Choice,
+                Required = true,
+                Options =
+                [
+                    new("1d", "1 Day"),
+                    new("8h", "8 Hours"),
+                    new("7d", "7 Days"),
+                    new("30d", "30 Days"),
+                ],
+            },
+            new()
+            {
+                Name = "Roles",
+                InputType = InputType.Text,
+                Required = false,
+                Placeholder = "admin,reader",
+            },
+            new()
+            {
+                Name = "Scopes",
+                InputType = InputType.Text,
+                Required = false,
+                Placeholder = "api:read,api:write",
+            },
+            new()
+            {
+                Name = "Custom Claims JSON",
+                InputType = InputType.Text,
+                Required = false,
+                Placeholder = "{\"tenant\":\"acme\"}",
+            },
+        };
+
+        var result = await interactionService.PromptInputsAsync(
+            title: "Generate Development JWT",
+            message: "Configure the claims for your development bearer token:",
+            inputs: inputs,
+            cancellationToken: context.CancellationToken);
+
+        if (result.Canceled)
+        {
+            return CommandResults.Failure("JWT generation was canceled by the user.");
+        }
 
         try
         {
             var options = resourceBuilder.Resource.Options;
-            var config = resourceBuilder.ApplicationBuilder.Configuration;
+            var signingKey = resourceBuilder.ApplicationBuilder.Configuration[options.SigningKeySecretName];
 
-            var signingKey = config[options.SigningKeySecretName];
             if (string.IsNullOrWhiteSpace(signingKey))
             {
-                return CommandResults.Failure("Signing key not found. Ensure the AppHost has a UserSecretsId and can write to user-secrets.");
+                return CommandResults.Failure("Signing key not found. Ensure the AppHost has a UserSecretsId.");
             }
 
-            var (subject, expiry, roles, scopes, customClaims) = ReadClaimsConfig(config, options);
+            var subject = result.Data[0].Value ?? "dev-user";
+            var expiryStr = result.Data[1].Value ?? "1d";
+            var rolesStr = result.Data[2].Value;
+            var scopesStr = result.Data[3].Value;
+            var customClaimsStr = result.Data[4].Value;
+
+            var expiry = ParseExpiry(expiryStr);
+            var roles = ParseCsv(rolesStr);
+            var scopes = ParseCsv(scopesStr);
+            var customClaims = ParseCustomClaims(customClaimsStr);
 
             var token = JwtTokenFactory.CreateToken(
                 signingKey: signingKey,
@@ -157,62 +223,30 @@ public static partial class SharedDevJwtExtensions
                 scopes: scopes,
                 customClaims: customClaims);
 
-            var claimsJson = JsonSerializer.Serialize(new
-            {
-                subject,
-                expiry = FormatExpiry(expiry),
-                roles = roles is not null ? string.Join(",", roles) : string.Empty,
-                scopes = scopes is not null ? string.Join(",", scopes) : string.Empty,
-                customClaims = customClaims is not null
-                    ? JsonSerializer.Serialize(customClaims)
-                    : string.Empty,
-            });
-
             WriteUserSecret(options.CurrentTokenSecretName, token);
-            WriteUserSecret(options.LastClaimsJsonSecretName, claimsJson);
 
-            LogJwtGenerated(logger, subject, options.Issuer);
+            logger.LogInformation(
+                """
+                JWT generated successfully.
+                Subject: {Subject}
+                Expiry: {Expiry}
+                Roles: {Roles}
+                Scopes: {Scopes}
+                Token stored in user-secret '{SecretName}'.
+                """,
+                subject,
+                expiryStr,
+                rolesStr ?? "(none)",
+                scopesStr ?? "(none)",
+                options.CurrentTokenSecretName);
 
-            return await Task.FromResult(CommandResults.Success());
+            return CommandResults.Success();
         }
         catch (Exception ex)
         {
             LogJwtGenerationFailed(logger, ex);
             return CommandResults.Failure(ex.Message);
         }
-    }
-
-    private static (string subject, TimeSpan expiry, IEnumerable<string>? roles, IEnumerable<string>? scopes, IDictionary<string, string>? customClaims)
-        ReadClaimsConfig(IConfiguration config, SharedDevJwtOptions options)
-    {
-        var lastClaimsJson = config[options.LastClaimsJsonSecretName];
-
-        if (!string.IsNullOrWhiteSpace(lastClaimsJson))
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(lastClaimsJson);
-                var root = doc.RootElement;
-
-                var subject = root.TryGetProperty("subject", out var subEl) ? subEl.GetString() ?? "dev-user" : "dev-user";
-                var expiryStr = root.TryGetProperty("expiry", out var expEl) ? expEl.GetString() : null;
-                var rolesStr = root.TryGetProperty("roles", out var rolesEl) ? rolesEl.GetString() : null;
-                var scopesStr = root.TryGetProperty("scopes", out var scopesEl) ? scopesEl.GetString() : null;
-                var customClaimsStr = root.TryGetProperty("customClaims", out var ccEl) ? ccEl.GetString() : null;
-
-                var roles = ParseCsv(rolesStr);
-                var scopes = ParseCsv(scopesStr);
-                var customClaims = ParseCustomClaims(customClaimsStr);
-
-                return (subject, ParseExpiry(expiryStr), roles, scopes, customClaims);
-            }
-            catch (JsonException)
-            {
-                // Fall through to defaults
-            }
-        }
-
-        return ("dev-user", TimeSpan.FromDays(1), null, null, null);
     }
 
     private static TimeSpan ParseExpiry(string? expiry)
@@ -238,21 +272,6 @@ public static partial class SharedDevJwtExtensions
         }
 
         return TimeSpan.FromDays(1);
-    }
-
-    private static string FormatExpiry(TimeSpan expiry)
-    {
-        if (expiry.TotalDays >= 1 && expiry.TotalDays % 1 == 0)
-        {
-            return $"{(int)expiry.TotalDays}d";
-        }
-
-        if (expiry.TotalHours >= 1 && expiry.TotalHours % 1 == 0)
-        {
-            return $"{(int)expiry.TotalHours}h";
-        }
-
-        return $"{(int)expiry.TotalMinutes}m";
     }
 
     private static string[]? ParseCsv(string? csv)
@@ -357,9 +376,7 @@ public static partial class SharedDevJwtExtensions
         return assembly?.GetCustomAttribute<UserSecretsIdAttribute>()?.UserSecretsId;
     }
 
-    [LoggerMessage(LogLevel.Information, "JWT generated for subject '{Subject}' with issuer '{Issuer}'.")]
-    private static partial void LogJwtGenerated(ILogger logger, string subject, string issuer);
-
     [LoggerMessage(LogLevel.Error, "Failed to generate JWT token.")]
     private static partial void LogJwtGenerationFailed(ILogger logger, Exception exception);
 }
+

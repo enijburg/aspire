@@ -16,7 +16,4 @@ public static class SharedDevJwtAuthority
 
     /// <summary>User-secrets key for the current bearer token: <c>DevJwt:Tokens:Current</c></summary>
     public const string DefaultCurrentTokenSecret = "DevJwt:Tokens:Current";
-
-    /// <summary>User-secrets key for last-used claims JSON: <c>DevJwt:Tokens:LastClaimsJson</c></summary>
-    public const string DefaultLastClaimsJsonSecret = "DevJwt:Tokens:LastClaimsJson";
 }
