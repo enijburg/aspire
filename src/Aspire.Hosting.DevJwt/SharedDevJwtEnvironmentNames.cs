@@ -13,7 +13,7 @@ public static class SharedDevJwtEnvironmentNames
     /// <summary>
     /// <c>Authentication__Schemes__Bearer__ValidAudiences__0</c>
     /// </summary>
-    public const string ValidAudiences0 = "Authentication__Schemes__Bearer__ValidAudiences__0";
+    public const string ValidAudiences = "Authentication__Schemes__Bearer__ValidAudiences__0";
 
     /// <summary>
     /// <c>Authentication__Schemes__Bearer__SigningKeys__0__Issuer</c>

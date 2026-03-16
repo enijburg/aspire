@@ -79,7 +79,7 @@ public static partial class SharedDevJwtExtensions
             var signingKey = resource.ApplicationBuilder.Configuration[options.SigningKeySecretName] ?? string.Empty;
 
             ctx.EnvironmentVariables[SharedDevJwtEnvironmentNames.ValidIssuer] = options.Issuer;
-            ctx.EnvironmentVariables[SharedDevJwtEnvironmentNames.ValidAudiences0] = options.Audience;
+            ctx.EnvironmentVariables[SharedDevJwtEnvironmentNames.ValidAudiences] = options.Audience;
             ctx.EnvironmentVariables[SharedDevJwtEnvironmentNames.SigningKeyIssuer] = options.Issuer;
             ctx.EnvironmentVariables[SharedDevJwtEnvironmentNames.SigningKeyValue] = signingKey;
         });
@@ -149,10 +149,16 @@ public static partial class SharedDevJwtExtensions
                 Required = true,
                 Options =
                 [
-                    new("1d", "1 Day"),
+                    new("15m", "15 Minutes"),
+                    new("30m", "30 Minutes"),
+                    new("1h", "1 Hour"),
+                    new("4h", "4 Hours"),
                     new("8h", "8 Hours"),
+                    new("1d", "1 Day"),
                     new("7d", "7 Days"),
                     new("30d", "30 Days"),
+                    new("90d", "90 Days"),
+                    new("365d", "1 Year"),
                 ],
             },
             new()
