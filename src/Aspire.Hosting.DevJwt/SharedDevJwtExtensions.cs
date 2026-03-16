@@ -1,9 +1,6 @@
-using System.Reflection;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Aspire.Hosting.ApplicationModel;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Configuration.UserSecrets;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -223,7 +220,7 @@ public static partial class SharedDevJwtExtensions
                 scopes: scopes,
                 customClaims: customClaims);
 
-            WriteUserSecret(options.CurrentTokenSecretName, token);
+            WriteSecret(resourceBuilder.ApplicationBuilder, options.CurrentTokenSecretName, token);
 
             logger.LogInformation(
                 """
@@ -304,76 +301,18 @@ public static partial class SharedDevJwtExtensions
 
     private static void EnsureSigningKey(IDistributedApplicationBuilder builder, SharedDevJwtOptions options)
     {
-        var existingKey = builder.Configuration[options.SigningKeySecretName];
-        if (!string.IsNullOrWhiteSpace(existingKey))
+        if (builder.Configuration is IConfigurationManager configManager)
         {
-            return;
-        }
-
-        var newKey = JwtTokenFactory.GenerateSigningKey();
-        WriteUserSecret(options.SigningKeySecretName, newKey);
-
-        if (builder.Configuration is IConfigurationRoot configRoot)
-        {
-            configRoot.Reload();
+            builder.UserSecretsManager.GetOrSetSecret(
+                configManager,
+                options.SigningKeySecretName,
+                JwtTokenFactory.GenerateSigningKey);
         }
     }
 
-    private static void WriteUserSecret(string key, string value)
+    private static void WriteSecret(IDistributedApplicationBuilder builder, string key, string value)
     {
-        var userSecretsId = GetUserSecretsId();
-        if (userSecretsId is null)
-        {
-            return;
-        }
-
-        var secretsPath = PathHelper.GetSecretsPathFromSecretsId(userSecretsId);
-        var dir = Path.GetDirectoryName(secretsPath);
-        if (dir is not null)
-        {
-            Directory.CreateDirectory(dir);
-        }
-
-        JsonObject secrets;
-        if (File.Exists(secretsPath))
-        {
-            var existing = File.ReadAllText(secretsPath);
-            secrets = JsonNode.Parse(existing)?.AsObject() ?? new JsonObject();
-        }
-        else
-        {
-            secrets = new JsonObject();
-        }
-
-        SetNestedValue(secrets, key.Split(':'), value);
-
-        File.WriteAllText(
-            secretsPath,
-            secrets.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-    }
-
-    private static void SetNestedValue(JsonObject obj, string[] keys, string value)
-    {
-        if (keys.Length == 1)
-        {
-            obj[keys[0]] = value;
-            return;
-        }
-
-        var key = keys[0];
-        if (obj[key] is not JsonObject nested)
-        {
-            nested = new JsonObject();
-            obj[key] = nested;
-        }
-
-        SetNestedValue(nested, keys[1..], value);
-    }
-
-    private static string? GetUserSecretsId()
-    {
-        var assembly = Assembly.GetEntryAssembly();
-        return assembly?.GetCustomAttribute<UserSecretsIdAttribute>()?.UserSecretsId;
+        builder.UserSecretsManager.TrySetSecret(key, value);
     }
 
     [LoggerMessage(LogLevel.Error, "Failed to generate JWT token.")]
