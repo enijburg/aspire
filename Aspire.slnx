@@ -1,8 +1,12 @@
 <Solution>
   <Folder Name="/playground/">
     <Project Path="playground/AspireGroupSupport/AspireGroupSupport.csproj" />
+    <Project Path="playground/JwtAuth/JwtAuth.AppHost/JwtAuth.AppHost.csproj" />
+    <Project Path="playground/JwtAuth/JwtAuth.ApiOne/JwtAuth.ApiOne.csproj" />
+    <Project Path="playground/JwtAuth/JwtAuth.ApiTwo/JwtAuth.ApiTwo.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Aspire.Hosting.Groups/Aspire.Hosting.Groups.csproj" />
+    <Project Path="src/Aspire.Hosting.DevJwt/Aspire.Hosting.DevJwt.csproj" />
   </Folder>
 </Solution>
