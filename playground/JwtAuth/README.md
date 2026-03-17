@@ -4,19 +4,21 @@ A .NET Aspire playground that demonstrates shared JWT bearer authentication acro
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                   JwtAuth.AppHost                       │
-│                                                         │
-│  ┌──────────────┐   env vars   ┌──────────────────────┐ │
-│  │  dev-jwt      │────────────▶│  api-one (ApiOne)    │ │
-│  │  (authority)  │────────────▶│  api-two (ApiTwo)    │ │
-│  │              │────────────▶│  tests  (Tests)      │ │
-│  └──────────────┘             └──────────────────────┘ │
-│                                       │                 │
-│              WithReference(apiOne) ───┘                 │
-│              WithReference(apiTwo) ───┘                 │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+graph LR
+    subgraph JwtAuth.AppHost
+        devjwt["dev-jwt<br/>(authority)"]
+        apiOne["api-one<br/>(ApiOne)"]
+        apiTwo["api-two<br/>(ApiTwo)"]
+        tests["tests<br/>(Tests)"]
+
+        devjwt -- env vars --> apiOne
+        devjwt -- env vars --> apiTwo
+        devjwt -- env vars --> tests
+
+        tests -. WithReference .-> apiOne
+        tests -. WithReference .-> apiTwo
+    end
 ```
 
 The AppHost creates a shared development JWT authority (`dev-jwt`) and distributes its signing key, issuer, and audience to all services and the test project via environment variables.
