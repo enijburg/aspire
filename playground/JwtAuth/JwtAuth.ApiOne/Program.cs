@@ -49,7 +49,7 @@ app.MapGet("/me", [Authorize] (ClaimsPrincipal user) =>
 
 await app.RunAsync();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+internal record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
 {
     public int TemperatureF => 32 + (int)(TemperatureC * 9 / 5.0);
 }

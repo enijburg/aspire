@@ -54,4 +54,4 @@ app.MapGet("/me", [Authorize] (ClaimsPrincipal user) =>
 
 await app.RunAsync();
 
-record Product(int Id, string Name, decimal Price);
+internal record Product(int Id, string Name, decimal Price);
