@@ -1,5 +1,7 @@
 # JwtAuth Playground
 
+[See Article](https://www.ewartnijburg.nl/go/544ce9)
+
 A .NET Aspire playground that demonstrates shared JWT bearer authentication across multiple API services, with an integration test project orchestrated by the AppHost.
 
 ## Architecture
