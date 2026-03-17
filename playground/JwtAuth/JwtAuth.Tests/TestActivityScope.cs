@@ -8,7 +8,7 @@ namespace JwtAuth.Tests;
 /// </summary>
 public static class TestActivityScope
 {
-    private static readonly AsyncLocal<ActivityState?> SCurrentState = new();
+    private static readonly AsyncLocal<ActivityState?> CurrentState = new();
 
     /// <summary>
     /// Reports the actual HTTP status code observed during the test.
@@ -16,7 +16,7 @@ public static class TestActivityScope
     /// </summary>
     public static void ReportStatusCode(HttpStatusCode statusCode)
     {
-        if (SCurrentState.Value is { } state)
+        if (CurrentState.Value is { } state)
         {
             state.ActualStatusCode = statusCode;
         }
@@ -25,13 +25,13 @@ public static class TestActivityScope
     internal static ActivityState Begin()
     {
         var state = new ActivityState();
-        SCurrentState.Value = state;
+        CurrentState.Value = state;
         return state;
     }
 
     internal static void End()
     {
-        SCurrentState.Value = null;
+        CurrentState.Value = null;
     }
 
     internal sealed class ActivityState

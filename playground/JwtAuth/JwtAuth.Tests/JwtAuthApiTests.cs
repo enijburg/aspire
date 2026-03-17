@@ -11,11 +11,11 @@ namespace JwtAuth.Tests;
 [TestClass]
 public sealed class JwtAuthApiTests
 {
-    private static readonly JsonSerializerOptions SJsonOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    private static string? _sToken;
-    private static IHost? _sHost;
-    private static ILogger? _sLogger;
+    private static string _token = null!;
+    private static IHost _host = null!;
+    private static ILogger _logger = null!;
 
     [ClassInitialize]
     public static async Task ClassInitialize(TestContext context)
@@ -32,7 +32,7 @@ public sealed class JwtAuthApiTests
         var audience = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.ValidAudiences)
             ?? SharedDevJwtAuthority.DefaultAudience;
 
-        _sToken = JwtTokenFactory.CreateToken(
+        _token = JwtTokenFactory.CreateToken(
             signingKey: signingKey,
             issuer: issuer,
             audience: audience,
@@ -63,21 +63,18 @@ public sealed class JwtAuthApiTests
         hostBuilder.Services.AddHttpClient("api-two", client =>
             client.BaseAddress = new Uri("https+http://api-two"));
 
-        _sHost = hostBuilder.Build();
-        await _sHost.StartAsync();
+        _host = hostBuilder.Build();
+        await _host.StartAsync();
 
-        _sLogger = _sHost.Services.GetRequiredService<ILoggerFactory>().CreateLogger<JwtAuthApiTests>();
-        _sLogger.LogInformation("JWT generated for subject 'test-user' (issuer: {Issuer}, audience: {Audience})", issuer, audience);
+        _logger = _host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<JwtAuthApiTests>();
+        _logger.LogInformation("JWT generated for subject 'test-user' (issuer: {Issuer}, audience: {Audience})", issuer, audience);
     }
 
     [ClassCleanup]
     public static async Task ClassCleanup()
     {
-        if (_sHost is not null)
-        {
-            await _sHost.StopAsync();
-            _sHost.Dispose();
-        }
+        await _host.StopAsync();
+        _host.Dispose();
     }
 
     // ------------------------------ ApiOne tests ------------------------------
@@ -252,13 +249,13 @@ public sealed class JwtAuthApiTests
     private static HttpClient CreateAuthenticatedClient(string serviceName)
     {
         var client = CreateUnauthenticatedClient(serviceName);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _sToken);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _token);
         return client;
     }
 
     private static HttpClient CreateUnauthenticatedClient(string serviceName)
     {
-        var factory = _sHost!.Services.GetRequiredService<IHttpClientFactory>();
+        var factory = _host.Services.GetRequiredService<IHttpClientFactory>();
         return factory.CreateClient(serviceName);
     }
 
@@ -267,7 +264,7 @@ public sealed class JwtAuthApiTests
         try
         {
             var element = JsonSerializer.Deserialize<JsonElement>(json);
-            return JsonSerializer.Serialize(element, SJsonOptions);
+            return JsonSerializer.Serialize(element, JsonOptions);
         }
         catch (JsonException)
         {
@@ -278,7 +275,7 @@ public sealed class JwtAuthApiTests
     private static void LogEndpointReport(string api, string endpoint, HttpStatusCode status, string body)
     {
         var prettyBody = PrettyPrint(body);
-        _sLogger!.LogInformation("""
+        _logger.LogInformation("""
                                  [{Api}] {Endpoint} => {StatusCode} {Status}
                                  {Body}
                                  """, api, endpoint, (int)status, status, prettyBody);
