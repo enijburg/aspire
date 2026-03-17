@@ -78,6 +78,82 @@ The AppHost creates a shared development JWT authority (`dev-jwt`) and distribut
 - **`EnableMSTestRunner`** — set to `true` in the `.csproj` so the project runs tests when launched as an executable (required for Aspire orchestration).
 - **`test.runsettings`** — disables MSTest's `CaptureTraceOutput` (which redirects `Console.Out` into per-test buffers) so diagnostic output reaches stdout and is visible in the Aspire dashboard.
 
+### `TracedTestMethodAttribute` Pattern
+
+Test methods use `[TracedTestMethod]` instead of the standard `[TestMethod]`. This custom attribute wraps every test execution in an OpenTelemetry `Activity` so that each test appears as a span in the Aspire dashboard's distributed traces view.
+
+#### Components
+
+| Class | Role |
+|---|---|
+| `TracedTestMethodAttribute` | Extends `TestMethodAttribute`. Starts an `Activity` before the test runs and sets outcome tags when it completes. Accepts an optional `expectedStatusCode` (defaults to `200 OK`). |
+| `TestActivityScope` | Ambient scope backed by `AsyncLocal<T>`. Allows the test body to report the observed HTTP status code back to the wrapping attribute without a direct reference. |
+
+#### How It Works
+
+1. `TracedTestMethodAttribute.ExecuteAsync` starts a new `Activity` on the shared `JwtAuth.Tests` `ActivitySource` and tags it with `test.name`, `test.expected_status_code`, and `test.expects_success`.
+2. It opens a `TestActivityScope` and delegates to `base.ExecuteAsync` (the normal MSTest pipeline).
+3. Inside the test body, `TestActivityScope.ReportStatusCode(response.StatusCode)` stores the actual HTTP status code in the `AsyncLocal` state.
+4. After the test completes, the attribute reads the reported status code and compares it to `ExpectedStatusCode`:
+   - **Match** → `ActivityStatusCode.Ok`, `test.passed = true`.
+   - **Mismatch** → `ActivityStatusCode.Error`, `test.passed = false` with a descriptive message.
+   - **No status reported** → outcome is derived from the MSTest `UnitTestOutcome`.
+5. The `Activity` is disposed (ending the span), and `TestActivityScope.End()` clears the `AsyncLocal`.
+
+#### Usage
+
+```csharp
+// Happy-path test — expects 200 OK (default)
+[TracedTestMethod]
+public async Task ApiOne_GetWeatherForecast_ReturnsForecasts()
+{
+    using var client = CreateAuthenticatedClient("api-one");
+    var response = await client.GetAsync("/weatherforecast");
+    Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+
+    TestActivityScope.ReportStatusCode(response.StatusCode);
+}
+
+// Negative test — expects 401 Unauthorized
+[TracedTestMethod(HttpStatusCode.Unauthorized)]
+public async Task ApiOne_WithoutToken_ReturnsUnauthorized()
+{
+    using var client = CreateUnauthenticatedClient("api-one");
+    var response = await client.GetAsync("/weatherforecast");
+    Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+
+    TestActivityScope.ReportStatusCode(response.StatusCode);
+}
+```
+
+#### Activity Tags
+
+| Tag | Type | Description |
+|---|---|---|
+| `test.name` | string | The test method name. |
+| `test.expected_status_code` | int | The HTTP status code the test expects. |
+| `test.expects_success` | bool | `true` when the expected status code is < 400. |
+| `test.actual_status_code` | int | The HTTP status code reported by `TestActivityScope.ReportStatusCode`. |
+| `test.passed` | bool | Whether the actual status code matched the expected one. |
+
+### Test Coverage
+
+Every endpoint on both APIs is covered by an **authenticated** (happy-path) test and an **unauthorized** (no-token → 401) test:
+
+| Test | API | Endpoint | Expected |
+|---|---|---|---|
+| `ApiOne_GetWeatherForecast_ReturnsForecasts` | ApiOne | `GET /weatherforecast` | 200 OK |
+| `ApiOne_GetMe_ReturnsAuthenticatedUser` | ApiOne | `GET /me` | 200 OK |
+| `ApiTwo_GetProducts_ReturnsProductCatalogue` | ApiTwo | `GET /products` | 200 OK |
+| `ApiTwo_GetProductById_ReturnsProduct` | ApiTwo | `GET /products/1` | 200 OK |
+| `ApiTwo_GetProductById_ReturnsNotFoundForMissing` | ApiTwo | `GET /products/9999` | 404 Not Found |
+| `ApiTwo_GetMe_ReturnsAuthenticatedUser` | ApiTwo | `GET /me` | 200 OK |
+| `ApiOne_WithoutToken_ReturnsUnauthorized` | ApiOne | `GET /weatherforecast` | 401 Unauthorized |
+| `ApiOne_GetMe_WithoutToken_ReturnsUnauthorized` | ApiOne | `GET /me` | 401 Unauthorized |
+| `ApiTwo_WithoutToken_ReturnsUnauthorized` | ApiTwo | `GET /products` | 401 Unauthorized |
+| `ApiTwo_GetProductById_WithoutToken_ReturnsUnauthorized` | ApiTwo | `GET /products/1` | 401 Unauthorized |
+| `ApiTwo_GetMe_WithoutToken_ReturnsUnauthorized` | ApiTwo | `GET /me` | 401 Unauthorized |
+
 ### Test Flow
 
 1. `ClassInitialize` reads the JWT signing key and service URLs from environment variables.

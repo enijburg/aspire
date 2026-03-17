@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json;
 using Aspire.Hosting.DevJwt;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,6 +46,10 @@ public sealed class JwtAuthApiTests
         var hostBuilder = Host.CreateApplicationBuilder();
         hostBuilder.AddServiceDefaults();
 
+        // Register the test ActivitySource so spans appear in the Aspire dashboard
+        hostBuilder.Services.AddOpenTelemetry()
+            .WithTracing(tracing => tracing.AddSource(TracedTestMethodAttribute.TestActivitySource.Name));
+
         hostBuilder.Services.ConfigureHttpClientDefaults(http =>
         {
             http.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
@@ -79,7 +82,7 @@ public sealed class JwtAuthApiTests
 
     // ------------------------------ ApiOne tests ------------------------------
 
-    [TestMethod]
+    [TracedTestMethod]
     public async Task ApiOne_GetWeatherForecast_ReturnsForecasts()
     {
         using var client = CreateAuthenticatedClient("api-one");
@@ -92,10 +95,11 @@ public sealed class JwtAuthApiTests
         Assert.IsNotNull(forecasts);
         Assert.IsTrue(forecasts.Length > 0, "Expected at least one weather forecast.");
 
+        TestActivityScope.ReportStatusCode(response.StatusCode);
         LogEndpointReport("ApiOne", "GET /weatherforecast", response.StatusCode, body);
     }
 
-    [TestMethod]
+    [TracedTestMethod]
     public async Task ApiOne_GetMe_ReturnsAuthenticatedUser()
     {
         using var client = CreateAuthenticatedClient("api-one");
@@ -107,12 +111,13 @@ public sealed class JwtAuthApiTests
         var user = JsonSerializer.Deserialize<JsonElement>(body);
         Assert.AreEqual("ApiOne", user.GetProperty("service").GetString());
 
+        TestActivityScope.ReportStatusCode(response.StatusCode);
         LogEndpointReport("ApiOne", "GET /me", response.StatusCode, body);
     }
 
     // ------------------------------ ApiTwo tests ------------------------------
 
-    [TestMethod]
+    [TracedTestMethod]
     public async Task ApiTwo_GetProducts_ReturnsProductCatalogue()
     {
         using var client = CreateAuthenticatedClient("api-two");
@@ -125,10 +130,11 @@ public sealed class JwtAuthApiTests
         Assert.IsNotNull(products);
         Assert.IsTrue(products.Length > 0, "Expected at least one product.");
 
+        TestActivityScope.ReportStatusCode(response.StatusCode);
         LogEndpointReport("ApiTwo", "GET /products", response.StatusCode, body);
     }
 
-    [TestMethod]
+    [TracedTestMethod]
     public async Task ApiTwo_GetProductById_ReturnsProduct()
     {
         using var client = CreateAuthenticatedClient("api-two");
@@ -140,10 +146,11 @@ public sealed class JwtAuthApiTests
         var product = JsonSerializer.Deserialize<JsonElement>(body);
         Assert.AreEqual(1, product.GetProperty("id").GetInt32());
 
+        TestActivityScope.ReportStatusCode(response.StatusCode);
         LogEndpointReport("ApiTwo", "GET /products/1", response.StatusCode, body);
     }
 
-    [TestMethod]
+    [TracedTestMethod(HttpStatusCode.NotFound)]
     public async Task ApiTwo_GetProductById_ReturnsNotFoundForMissing()
     {
         using var client = CreateAuthenticatedClient("api-two");
@@ -152,10 +159,11 @@ public sealed class JwtAuthApiTests
 
         Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
 
+        TestActivityScope.ReportStatusCode(response.StatusCode);
         LogEndpointReport("ApiTwo", "GET /products/9999", response.StatusCode, "(empty - 404 Not Found)");
     }
 
-    [TestMethod]
+    [TracedTestMethod]
     public async Task ApiTwo_GetMe_ReturnsAuthenticatedUser()
     {
         using var client = CreateAuthenticatedClient("api-two");
@@ -167,12 +175,13 @@ public sealed class JwtAuthApiTests
         var user = JsonSerializer.Deserialize<JsonElement>(body);
         Assert.AreEqual("ApiTwo", user.GetProperty("service").GetString());
 
+        TestActivityScope.ReportStatusCode(response.StatusCode);
         LogEndpointReport("ApiTwo", "GET /me", response.StatusCode, body);
     }
 
     // ------------------------ Unauthorized access tests -----------------------
 
-    [TestMethod]
+    [TracedTestMethod(HttpStatusCode.Unauthorized)]
     public async Task ApiOne_WithoutToken_ReturnsUnauthorized()
     {
         using var client = CreateUnauthenticatedClient("api-one");
@@ -181,10 +190,24 @@ public sealed class JwtAuthApiTests
 
         Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
 
+        TestActivityScope.ReportStatusCode(response.StatusCode);
         LogEndpointReport("ApiOne", "GET /weatherforecast (no token)", response.StatusCode, "(empty - 401 Unauthorized)");
     }
 
-    [TestMethod]
+    [TracedTestMethod(HttpStatusCode.Unauthorized)]
+    public async Task ApiOne_GetMe_WithoutToken_ReturnsUnauthorized()
+    {
+        using var client = CreateUnauthenticatedClient("api-one");
+
+        var response = await client.GetAsync("/me");
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        TestActivityScope.ReportStatusCode(response.StatusCode);
+        LogEndpointReport("ApiOne", "GET /me (no token)", response.StatusCode, "(empty - 401 Unauthorized)");
+    }
+
+    [TracedTestMethod(HttpStatusCode.Unauthorized)]
     public async Task ApiTwo_WithoutToken_ReturnsUnauthorized()
     {
         using var client = CreateUnauthenticatedClient("api-two");
@@ -193,63 +216,36 @@ public sealed class JwtAuthApiTests
 
         Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
 
+        TestActivityScope.ReportStatusCode(response.StatusCode);
         LogEndpointReport("ApiTwo", "GET /products (no token)", response.StatusCode, "(empty - 401 Unauthorized)");
     }
 
-    // ----------------------------- Summary report ----------------------------
-
-    [TestMethod]
-    public async Task PrintFullApiReport()
+    [TracedTestMethod(HttpStatusCode.Unauthorized)]
+    public async Task ApiTwo_GetProductById_WithoutToken_ReturnsUnauthorized()
     {
-        var report = new StringBuilder();
-        report.AppendLine();
-        report.AppendLine("======================================================================");
-        report.AppendLine("  JwtAuth API Integration Test Report");
-        report.AppendLine("======================================================================");
-        report.AppendLine();
+        using var client = CreateUnauthenticatedClient("api-two");
 
-        // ApiOne endpoints
-        report.AppendLine("  --- API ONE (api-one) ---");
+        var response = await client.GetAsync("/products/1");
 
-        using (var client = CreateAuthenticatedClient("api-one"))
-        {
-            await AppendEndpointResult(report, client, "GET", "/weatherforecast");
-            await AppendEndpointResult(report, client, "GET", "/me");
-        }
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
 
-        report.AppendLine();
-
-        // ApiTwo endpoints
-        report.AppendLine("  --- API TWO (api-two) ---");
-
-        using (var client = CreateAuthenticatedClient("api-two"))
-        {
-            await AppendEndpointResult(report, client, "GET", "/products");
-            await AppendEndpointResult(report, client, "GET", "/products/1");
-            await AppendEndpointResult(report, client, "GET", "/products/9999");
-            await AppendEndpointResult(report, client, "GET", "/me");
-        }
-
-        report.AppendLine();
-
-        // Unauthorized access
-        report.AppendLine("  --- UNAUTHORIZED ACCESS (no bearer token) ---");
-
-        using (var noAuthClient = CreateUnauthenticatedClient("api-one"))
-        {
-            await AppendEndpointResult(report, noAuthClient, "GET", "/weatherforecast");
-        }
-
-        using (var noAuthClient = CreateUnauthenticatedClient("api-two"))
-        {
-            await AppendEndpointResult(report, noAuthClient, "GET", "/products");
-        }
-
-        report.AppendLine();
-        report.AppendLine("======================================================================");
-
-        _sLogger!.LogInformation("{Report}", report.ToString());
+        TestActivityScope.ReportStatusCode(response.StatusCode);
+        LogEndpointReport("ApiTwo", "GET /products/1 (no token)", response.StatusCode, "(empty - 401 Unauthorized)");
     }
+
+    [TracedTestMethod(HttpStatusCode.Unauthorized)]
+    public async Task ApiTwo_GetMe_WithoutToken_ReturnsUnauthorized()
+    {
+        using var client = CreateUnauthenticatedClient("api-two");
+
+        var response = await client.GetAsync("/me");
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        TestActivityScope.ReportStatusCode(response.StatusCode);
+        LogEndpointReport("ApiTwo", "GET /me (no token)", response.StatusCode, "(empty - 401 Unauthorized)");
+    }
+
 
     // --------------------------------- Helpers --------------------------------
 
@@ -264,26 +260,6 @@ public sealed class JwtAuthApiTests
     {
         var factory = _sHost!.Services.GetRequiredService<IHttpClientFactory>();
         return factory.CreateClient(serviceName);
-    }
-
-    private static async Task AppendEndpointResult(StringBuilder report, HttpClient client, string method, string path)
-    {
-        var response = await client.GetAsync(path);
-        var statusCode = (int)response.StatusCode;
-        var statusText = response.StatusCode.ToString();
-        var body = response.IsSuccessStatusCode
-            ? PrettyPrint(await response.Content.ReadAsStringAsync())
-            : $"({statusCode} {statusText})";
-
-        report.AppendLine($"    {method} {path}");
-        report.AppendLine($"      Status: {statusCode} {statusText}");
-
-        foreach (var line in body.ReplaceLineEndings("\n").Split('\n'))
-        {
-            report.AppendLine($"      {line}");
-        }
-
-        report.AppendLine();
     }
 
     private static string PrettyPrint(string json)
@@ -302,6 +278,9 @@ public sealed class JwtAuthApiTests
     private static void LogEndpointReport(string api, string endpoint, HttpStatusCode status, string body)
     {
         var prettyBody = PrettyPrint(body);
-        _sLogger!.LogInformation("[{Api}] {Endpoint} => {StatusCode} {Status}\n{Body}", api, endpoint, (int)status, status, prettyBody);
+        _sLogger!.LogInformation("""
+                                 [{Api}] {Endpoint} => {StatusCode} {Status}
+                                 {Body}
+                                 """, api, endpoint, (int)status, status, prettyBody);
     }
 }
