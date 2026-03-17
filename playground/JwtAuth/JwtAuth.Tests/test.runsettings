@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <MSTest>
+    <!-- Disable Console.Out/Error capture so output flows to stdout
+         and is visible in the Aspire dashboard console logs. -->
+    <CaptureTraceOutput>false</CaptureTraceOutput>
+  </MSTest>
+</RunSettings>
