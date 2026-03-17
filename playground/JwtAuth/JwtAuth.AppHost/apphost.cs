@@ -12,6 +12,10 @@ builder.AddProject<Projects.JwtAuth_Tests>("tests")
     .WithReference(apiOne)
     .WithReference(apiTwo)
     .WaitFor(apiOne)
-    .WaitFor(apiTwo);
+    .WaitFor(apiTwo)
+    .WithArgs("--settings", "test.runsettings")
+    .WithExplicitStart();
+
 
 await builder.Build().RunAsync();
+

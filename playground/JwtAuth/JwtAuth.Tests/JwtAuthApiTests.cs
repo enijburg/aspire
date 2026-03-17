@@ -3,21 +3,23 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Aspire.Hosting.DevJwt;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace JwtAuth.Tests;
 
 [TestClass]
 public sealed class JwtAuthApiTests
 {
-    private static readonly JsonSerializerOptions s_jsonOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions SJsonOptions = new() { WriteIndented = true };
 
-    private static string? s_token;
-    private static string? s_apiOneUrl;
-    private static string? s_apiTwoUrl;
+    private static string? _sToken;
+    private static IHost? _sHost;
+    private static ILogger? _sLogger;
 
     [ClassInitialize]
-    public static Task ClassInitialize(TestContext context)
+    public static async Task ClassInitialize(TestContext context)
     {
         // Read JWT signing key from env var injected by AppHost via WithSharedDevJwt
         var signingKey = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.SigningKeyValue)
@@ -31,7 +33,7 @@ public sealed class JwtAuthApiTests
         var audience = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.ValidAudiences)
             ?? SharedDevJwtAuthority.DefaultAudience;
 
-        s_token = JwtTokenFactory.CreateToken(
+        _sToken = JwtTokenFactory.CreateToken(
             signingKey: signingKey,
             issuer: issuer,
             audience: audience,
@@ -39,25 +41,48 @@ public sealed class JwtAuthApiTests
             expiry: TimeSpan.FromMinutes(30),
             roles: ["admin", "reader"]);
 
-        Console.WriteLine($"[Setup] JWT generated for subject 'test-user' (issuer: {issuer}, audience: {audience})");
+        // Build a lightweight host that reuses the shared ServiceDefaults configuration:
+        // OpenTelemetry (tracing + metrics + OTLP export), service discovery, and resilience.
+        // Named HttpClients for api-one / api-two resolve via Aspire service discovery.
+        var hostBuilder = Host.CreateApplicationBuilder();
+        hostBuilder.AddServiceDefaults();
 
-        // Read API base URLs from env vars injected by AppHost via WithReference
-        s_apiOneUrl = ResolveServiceUrl("api-one");
-        s_apiTwoUrl = ResolveServiceUrl("api-two");
+        hostBuilder.Services.ConfigureHttpClientDefaults(http =>
+        {
+            http.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+            });
+        });
 
-        Console.WriteLine($"[Setup] api-one URL: {s_apiOneUrl}");
-        Console.WriteLine($"[Setup] api-two URL: {s_apiTwoUrl}");
-        Console.WriteLine();
+        hostBuilder.Services.AddHttpClient("api-one", client =>
+            client.BaseAddress = new Uri("https+http://api-one"));
+        hostBuilder.Services.AddHttpClient("api-two", client =>
+            client.BaseAddress = new Uri("https+http://api-two"));
 
-        return Task.CompletedTask;
+        _sHost = hostBuilder.Build();
+        await _sHost.StartAsync();
+
+        _sLogger = _sHost.Services.GetRequiredService<ILoggerFactory>().CreateLogger<JwtAuthApiTests>();
+        _sLogger.LogInformation("JWT generated for subject 'test-user' (issuer: {Issuer}, audience: {Audience})", issuer, audience);
     }
 
-    // ───────────────────────────── ApiOne tests ─────────────────────────────
+    [ClassCleanup]
+    public static async Task ClassCleanup()
+    {
+        if (_sHost is not null)
+        {
+            await _sHost.StopAsync();
+            _sHost.Dispose();
+        }
+    }
+
+    // ------------------------------ ApiOne tests ------------------------------
 
     [TestMethod]
     public async Task ApiOne_GetWeatherForecast_ReturnsForecasts()
     {
-        using var client = CreateAuthenticatedClient(s_apiOneUrl!);
+        using var client = CreateAuthenticatedClient("api-one");
 
         var response = await client.GetAsync("/weatherforecast");
 
@@ -73,7 +98,7 @@ public sealed class JwtAuthApiTests
     [TestMethod]
     public async Task ApiOne_GetMe_ReturnsAuthenticatedUser()
     {
-        using var client = CreateAuthenticatedClient(s_apiOneUrl!);
+        using var client = CreateAuthenticatedClient("api-one");
 
         var response = await client.GetAsync("/me");
 
@@ -85,12 +110,12 @@ public sealed class JwtAuthApiTests
         LogEndpointReport("ApiOne", "GET /me", response.StatusCode, body);
     }
 
-    // ───────────────────────────── ApiTwo tests ─────────────────────────────
+    // ------------------------------ ApiTwo tests ------------------------------
 
     [TestMethod]
     public async Task ApiTwo_GetProducts_ReturnsProductCatalogue()
     {
-        using var client = CreateAuthenticatedClient(s_apiTwoUrl!);
+        using var client = CreateAuthenticatedClient("api-two");
 
         var response = await client.GetAsync("/products");
 
@@ -106,7 +131,7 @@ public sealed class JwtAuthApiTests
     [TestMethod]
     public async Task ApiTwo_GetProductById_ReturnsProduct()
     {
-        using var client = CreateAuthenticatedClient(s_apiTwoUrl!);
+        using var client = CreateAuthenticatedClient("api-two");
 
         var response = await client.GetAsync("/products/1");
 
@@ -121,19 +146,19 @@ public sealed class JwtAuthApiTests
     [TestMethod]
     public async Task ApiTwo_GetProductById_ReturnsNotFoundForMissing()
     {
-        using var client = CreateAuthenticatedClient(s_apiTwoUrl!);
+        using var client = CreateAuthenticatedClient("api-two");
 
         var response = await client.GetAsync("/products/9999");
 
         Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
 
-        LogEndpointReport("ApiTwo", "GET /products/9999", response.StatusCode, "(empty – 404 Not Found)");
+        LogEndpointReport("ApiTwo", "GET /products/9999", response.StatusCode, "(empty - 404 Not Found)");
     }
 
     [TestMethod]
     public async Task ApiTwo_GetMe_ReturnsAuthenticatedUser()
     {
-        using var client = CreateAuthenticatedClient(s_apiTwoUrl!);
+        using var client = CreateAuthenticatedClient("api-two");
 
         var response = await client.GetAsync("/me");
 
@@ -145,50 +170,48 @@ public sealed class JwtAuthApiTests
         LogEndpointReport("ApiTwo", "GET /me", response.StatusCode, body);
     }
 
-    // ───────────────────── Unauthorized access tests ────────────────────────
+    // ------------------------ Unauthorized access tests -----------------------
 
     [TestMethod]
     public async Task ApiOne_WithoutToken_ReturnsUnauthorized()
     {
-        using var client = CreateUnauthenticatedClient(s_apiOneUrl!);
+        using var client = CreateUnauthenticatedClient("api-one");
 
         var response = await client.GetAsync("/weatherforecast");
 
         Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
 
-        LogEndpointReport("ApiOne", "GET /weatherforecast (no token)", response.StatusCode, "(empty – 401 Unauthorized)");
+        LogEndpointReport("ApiOne", "GET /weatherforecast (no token)", response.StatusCode, "(empty - 401 Unauthorized)");
     }
 
     [TestMethod]
     public async Task ApiTwo_WithoutToken_ReturnsUnauthorized()
     {
-        using var client = CreateUnauthenticatedClient(s_apiTwoUrl!);
+        using var client = CreateUnauthenticatedClient("api-two");
 
         var response = await client.GetAsync("/products");
 
         Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
 
-        LogEndpointReport("ApiTwo", "GET /products (no token)", response.StatusCode, "(empty – 401 Unauthorized)");
+        LogEndpointReport("ApiTwo", "GET /products (no token)", response.StatusCode, "(empty - 401 Unauthorized)");
     }
 
-    // ───────────────────────── Summary report test ──────────────────────────
+    // ----------------------------- Summary report ----------------------------
 
     [TestMethod]
     public async Task PrintFullApiReport()
     {
         var report = new StringBuilder();
         report.AppendLine();
-        report.AppendLine("╔══════════════════════════════════════════════════════════════════════╗");
-        report.AppendLine("║               JwtAuth API Integration Test Report                   ║");
-        report.AppendLine("╠══════════════════════════════════════════════════════════════════════╣");
+        report.AppendLine("======================================================================");
+        report.AppendLine("  JwtAuth API Integration Test Report");
+        report.AppendLine("======================================================================");
         report.AppendLine();
 
         // ApiOne endpoints
-        report.AppendLine("  ┌─────────────────────────────────────────────────────────────────┐");
-        report.AppendLine("  │  API ONE (api-one)                                              │");
-        report.AppendLine("  └─────────────────────────────────────────────────────────────────┘");
+        report.AppendLine("  --- API ONE (api-one) ---");
 
-        using (var client = CreateAuthenticatedClient(s_apiOneUrl!))
+        using (var client = CreateAuthenticatedClient("api-one"))
         {
             await AppendEndpointResult(report, client, "GET", "/weatherforecast");
             await AppendEndpointResult(report, client, "GET", "/me");
@@ -197,11 +220,9 @@ public sealed class JwtAuthApiTests
         report.AppendLine();
 
         // ApiTwo endpoints
-        report.AppendLine("  ┌─────────────────────────────────────────────────────────────────┐");
-        report.AppendLine("  │  API TWO (api-two)                                              │");
-        report.AppendLine("  └─────────────────────────────────────────────────────────────────┘");
+        report.AppendLine("  --- API TWO (api-two) ---");
 
-        using (var client = CreateAuthenticatedClient(s_apiTwoUrl!))
+        using (var client = CreateAuthenticatedClient("api-two"))
         {
             await AppendEndpointResult(report, client, "GET", "/products");
             await AppendEndpointResult(report, client, "GET", "/products/1");
@@ -212,53 +233,37 @@ public sealed class JwtAuthApiTests
         report.AppendLine();
 
         // Unauthorized access
-        report.AppendLine("  ┌─────────────────────────────────────────────────────────────────┐");
-        report.AppendLine("  │  UNAUTHORIZED ACCESS (no bearer token)                          │");
-        report.AppendLine("  └─────────────────────────────────────────────────────────────────┘");
+        report.AppendLine("  --- UNAUTHORIZED ACCESS (no bearer token) ---");
 
-        using (var noAuthClient = CreateUnauthenticatedClient(s_apiOneUrl!))
+        using (var noAuthClient = CreateUnauthenticatedClient("api-one"))
         {
             await AppendEndpointResult(report, noAuthClient, "GET", "/weatherforecast");
         }
 
-        using (var noAuthClient = CreateUnauthenticatedClient(s_apiTwoUrl!))
+        using (var noAuthClient = CreateUnauthenticatedClient("api-two"))
         {
             await AppendEndpointResult(report, noAuthClient, "GET", "/products");
         }
 
         report.AppendLine();
-        report.AppendLine("╚══════════════════════════════════════════════════════════════════════╝");
+        report.AppendLine("======================================================================");
 
-        Console.WriteLine(report.ToString());
+        _sLogger!.LogInformation("{Report}", report.ToString());
     }
 
-    // ─────────────────────────────── Helpers ────────────────────────────────
+    // --------------------------------- Helpers --------------------------------
 
-    private static string ResolveServiceUrl(string serviceName)
+    private static HttpClient CreateAuthenticatedClient(string serviceName)
     {
-        // Aspire injects service endpoint URLs via WithReference in the format:
-        //   services__{name}__{scheme}__{index}
-        return Environment.GetEnvironmentVariable($"services__{serviceName}__https__0")
-            ?? Environment.GetEnvironmentVariable($"services__{serviceName}__http__0")
-            ?? throw new InvalidOperationException(
-                $"Service URL for '{serviceName}' not found. " +
-                $"Ensure the test is run via the JwtAuth AppHost.");
-    }
-
-    private static HttpClient CreateAuthenticatedClient(string baseUrl)
-    {
-        var client = CreateUnauthenticatedClient(baseUrl);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", s_token);
+        var client = CreateUnauthenticatedClient(serviceName);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _sToken);
         return client;
     }
 
-    private static HttpClient CreateUnauthenticatedClient(string baseUrl)
+    private static HttpClient CreateUnauthenticatedClient(string serviceName)
     {
-        var handler = new HttpClientHandler
-        {
-            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-        };
-        return new HttpClient(handler) { BaseAddress = new Uri(baseUrl) };
+        var factory = _sHost!.Services.GetRequiredService<IHttpClientFactory>();
+        return factory.CreateClient(serviceName);
     }
 
     private static async Task AppendEndpointResult(StringBuilder report, HttpClient client, string method, string path)
@@ -273,7 +278,7 @@ public sealed class JwtAuthApiTests
         report.AppendLine($"    {method} {path}");
         report.AppendLine($"      Status: {statusCode} {statusText}");
 
-        foreach (var line in body.Split('\n'))
+        foreach (var line in body.ReplaceLineEndings("\n").Split('\n'))
         {
             report.AppendLine($"      {line}");
         }
@@ -286,7 +291,7 @@ public sealed class JwtAuthApiTests
         try
         {
             var element = JsonSerializer.Deserialize<JsonElement>(json);
-            return JsonSerializer.Serialize(element, s_jsonOptions);
+            return JsonSerializer.Serialize(element, SJsonOptions);
         }
         catch (JsonException)
         {
@@ -297,8 +302,6 @@ public sealed class JwtAuthApiTests
     private static void LogEndpointReport(string api, string endpoint, HttpStatusCode status, string body)
     {
         var prettyBody = PrettyPrint(body);
-        Console.WriteLine($"[{api}] {endpoint} → {(int)status} {status}");
-        Console.WriteLine(prettyBody);
-        Console.WriteLine();
+        _sLogger!.LogInformation("[{Api}] {Endpoint} => {StatusCode} {Status}\n{Body}", api, endpoint, (int)status, status, prettyBody);
     }
 }

@@ -12,4 +12,8 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\JwtAuth.ServiceDefaults\JwtAuth.ServiceDefaults.csproj" />
+  </ItemGroup>
+
 </Project>
