@@ -20,25 +20,11 @@ public sealed class JwtAuthApiTests
     [ClassInitialize]
     public static async Task ClassInitialize(TestContext context)
     {
-        // Read JWT signing key from env var injected by AppHost via WithSharedDevJwt
-        var signingKey = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.SigningKeyValue)
+        // Read the pre-minted bearer token injected by the AppHost via WithNewDevJwtToken.
+        _token = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.GetBearerTokenName("test-user"))
             ?? throw new InvalidOperationException(
-                $"JWT signing key not found. Ensure the test is run via the JwtAuth AppHost " +
-                $"(expected env var: {SharedDevJwtEnvironmentNames.SigningKeyValue}).");
-
-        var issuer = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.ValidIssuer)
-            ?? SharedDevJwtAuthority.DefaultIssuer;
-
-        var audience = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.ValidAudiences)
-            ?? SharedDevJwtAuthority.DefaultAudience;
-
-        _token = JwtTokenFactory.CreateToken(
-            signingKey: signingKey,
-            issuer: issuer,
-            audience: audience,
-            subject: "test-user",
-            expiry: TimeSpan.FromMinutes(30),
-            roles: ["admin", "reader"]);
+                $"Bearer token not found. Ensure the test is run via the JwtAuth AppHost " +
+                $"(expected env var: {SharedDevJwtEnvironmentNames.GetBearerTokenName("test-user")}).");
 
         // Build a lightweight host that reuses the shared ServiceDefaults configuration:
         // OpenTelemetry (tracing + metrics + OTLP export), service discovery, and resilience.
@@ -67,7 +53,7 @@ public sealed class JwtAuthApiTests
         await _host.StartAsync();
 
         _logger = _host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<JwtAuthApiTests>();
-        _logger.LogInformation("JWT generated for subject 'test-user' (issuer: {Issuer}, audience: {Audience})", issuer, audience);
+        _logger.LogInformation("Bearer token loaded from environment (injected by AppHost via WithNewDevJwtToken).");
     }
 
     [ClassCleanup]

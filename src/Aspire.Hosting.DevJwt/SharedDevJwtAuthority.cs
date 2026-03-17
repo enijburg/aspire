@@ -16,4 +16,7 @@ public static class SharedDevJwtAuthority
 
     /// <summary>User-secrets key for the current bearer token: <c>DevJwt:Tokens:Current</c></summary>
     public const string DefaultCurrentTokenSecret = "DevJwt:Tokens:Current";
+
+    /// <summary>User-secrets key prefix for persisted Generate JWT dialog profiles: <c>DevJwt:Profiles:</c></summary>
+    internal const string ProfilesSection = "DevJwt:Profiles";
 }

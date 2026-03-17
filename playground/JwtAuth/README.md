@@ -30,9 +30,9 @@ The AppHost creates a shared development JWT authority (`dev-jwt`) and distribut
 | **JwtAuth.AppHost** | Aspire orchestrator. Registers the JWT authority, both APIs, and the test project. |
 | **JwtAuth.ApiOne** | Minimal API with `/weatherforecast` and `/me` endpoints, protected by `[Authorize]`. |
 | **JwtAuth.ApiTwo** | Minimal API with `/products`, `/products/{id}`, and `/me` endpoints, protected by `[Authorize]`. |
-| **JwtAuth.Tests** | MSTest integration tests that run against both APIs using a self-minted JWT. |
+| **JwtAuth.Tests** | MSTest integration tests that run against both APIs using pre-minted JWTs injected by the AppHost. |
 | **JwtAuth.ServiceDefaults** | Shared Aspire service defaults (OpenTelemetry, resilience, service discovery). |
-| **Aspire.Hosting.DevJwt** | Reusable library providing the `AddSharedDevJwtAuthority`, `AddJwtProject`, and `WithSharedDevJwt` extension methods. |
+| **Aspire.Hosting.DevJwt** | Reusable library providing the `AddSharedDevJwtAuthority`, `AddJwtProject`, `WithSharedDevJwt`, `WithNewDevJwtToken`, `WithCurrentDevJwtToken`, and `WithDevJwtProfileToken` extension methods, plus the dashboard "Generate JWT" command with named profile support. |
 
 ## How JWT Authentication Works
 
@@ -49,7 +49,13 @@ The AppHost creates a shared development JWT authority (`dev-jwt`) and distribut
 
 3. **Bearer validation** — Each API calls `builder.Services.AddAuthentication().AddJwtBearer()` with no extra configuration. ASP.NET Core's `JwtBearerOptions` auto-binds from the `Authentication:Schemes:Bearer:*` configuration keys, which are populated by the environment variables above.
 
-4. **Token minting** — The test project (and the dashboard's "Generate JWT" command) use `JwtTokenFactory.CreateToken(...)` to produce signed tokens from the same key.
+4. **Token injection** — `WithNewDevJwtToken(devJwt, ...)` mints a signed JWT at orchestration time and injects it as the `DevJwt__BearerToken__{name}` environment variable. The dashboard's "Generate JWT" command and `JwtTokenFactory.CreateToken(...)` can also produce tokens from the same key.
+
+5. **Dashboard token pass-through** — `WithCurrentDevJwtToken(devJwt)` reads the most recently generated JWT from user-secrets (`DevJwt:Tokens:Current`) and injects it as the default `DevJwt__BearerToken` environment variable. This lets the test project use a token generated interactively via the dashboard.
+
+6. **Profile-based token injection** — `WithDevJwtProfileToken(devJwt, profile, ...)` reads a saved profile's claims from user-secrets (`DevJwt:Profiles:{profile}:*`) and mints a fresh JWT at orchestration time. Profiles are created and managed via the dashboard's "Generate JWT" command.
+
+7. **Dashboard visibility** — The `dev-jwt` resource displays its Issuer, Audience, SigningKey, and BearerToken as environment variables in the Aspire dashboard's resource details panel. The SigningKey and BearerToken values are shown with the built-in show/hide masking toggle.
 
 ## API Endpoints
 
@@ -72,7 +78,8 @@ The AppHost creates a shared development JWT authority (`dev-jwt`) and distribut
 
 `JwtAuth.Tests` is an MSTest project registered in the AppHost with `AddProject` and configured with:
 
-- **`WithSharedDevJwt(devJwt)`** — receives the signing key and JWT configuration.
+- **`WithCurrentDevJwtToken(devJwt)`** — reads the most recently dashboard-generated JWT from user-secrets and injects it as the default `DevJwt__BearerToken`. This allows tests to use tokens created interactively via the Aspire dashboard's "Generate JWT" command.
+- **`WithNewDevJwtToken(devJwt, ...)`** — mints a signed JWT at orchestration time and injects it as an environment variable. Called multiple times with different `name` values to provide tokens for different test scenarios (e.g. `test-user`, `readonly`, `noscopes`). The test reads tokens via `SharedDevJwtEnvironmentNames.GetBearerTokenName(name)`.
 - **`WithReference(apiOne)` / `WithReference(apiTwo)`** — receives service endpoint URLs as `services__api-one__https__0` (and `http` fallback) environment variables.
 - **`WaitFor(apiOne)` / `WaitFor(apiTwo)`** — ensures both APIs are healthy before the tests start.
 - **`WithArgs("--settings", "test.runsettings")`** — passes the runsettings file to the MSTest runner so `Console.WriteLine` output flows to stdout and appears in the Aspire dashboard console logs.
@@ -158,14 +165,28 @@ Every endpoint on both APIs is covered by an **authenticated** (happy-path) test
 
 ### Test Flow
 
-1. `ClassInitialize` reads the JWT signing key and service URLs from environment variables.
-2. A bearer token is minted using `JwtTokenFactory.CreateToken` with subject `test-user` and roles `admin`, `reader`.
+1. `ClassInitialize` reads the pre-minted bearer token from the `DevJwt__BearerToken__test-user` environment variable (injected by `WithNewDevJwtToken` at orchestration time, read via `SharedDevJwtEnvironmentNames.GetBearerTokenName("test-user")`).
+2. A lightweight `IHost` is built with Aspire service defaults for service discovery and OpenTelemetry.
 3. Each test creates an `HttpClient` with the bearer token and calls API endpoints.
 4. Unauthorized access tests verify that requests without a token return `401`.
 
 ### Running the Tests
 
 Start the AppHost (F5 or `dotnet run` from `JwtAuth.AppHost`), then trigger the `tests` resource from the Aspire dashboard. The tests will execute in-process using the MSTest runner and report results back to the dashboard.
+
+## Generate JWT Command and Named Profiles
+
+The `dev-jwt` resource exposes a **Generate JWT** command in the Aspire dashboard. This command uses a two-step interactive dialog:
+
+1. **Profile picker** — If saved profiles exist in user-secrets, a dropdown lists them alongside a "(Create new)" option. If no profiles exist, this step is skipped.
+2. **JWT generation form** — Fields for Profile Name, Subject, Expiry, Roles, Scopes, and Custom Claims JSON. When editing an existing profile, all fields are pre-populated from user-secrets.
+
+After generation:
+- The token is stored in user-secrets under `DevJwt:Tokens:Current`.
+- The profile's claims are persisted under `DevJwt:Profiles:{name}:*` (Subject, Expiry, Roles, Scopes, CustomClaimsJson).
+- The `dev-jwt` resource's BearerToken environment variable is updated live in the dashboard.
+
+Profiles survive across AppHost restarts because they are stored in user-secrets.
 
 ## AppHost Configuration
 
@@ -177,7 +198,10 @@ var apiOne = builder.AddJwtProject<Projects.JwtAuth_ApiOne>("api-one", devJwt);
 var apiTwo = builder.AddJwtProject<Projects.JwtAuth_ApiTwo>("api-two", devJwt);
 
 builder.AddProject<Projects.JwtAuth_Tests>("tests")
-    .WithSharedDevJwt(devJwt)
+    .WithCurrentDevJwtToken(devJwt)
+    .WithNewDevJwtToken(devJwt, name: "test-user", subject: "test-user", roles: ["admin", "reader"])
+    .WithNewDevJwtToken(devJwt, name: "readonly", subject: "test-reader", roles: ["reader"])
+    .WithNewDevJwtToken(devJwt, name: "noscopes", subject: "test-bare")
     .WithReference(apiOne)
     .WithReference(apiTwo)
     .WaitFor(apiOne)

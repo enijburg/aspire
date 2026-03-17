@@ -33,16 +33,28 @@ public static partial class SharedDevJwtExtensions
 
         var resource = new DevJwtAuthorityResource(name, options);
 
+        var signingKey = builder.Configuration[options.SigningKeySecretName] ?? string.Empty;
+        var existingToken = builder.Configuration[options.CurrentTokenSecretName];
+
+        var environmentVariables = new List<EnvironmentVariableSnapshot>
+        {
+            new("Issuer", options.Issuer, IsFromSpec: true),
+            new("Audience", options.Audience, IsFromSpec: true),
+            new("SigningKey", signingKey, IsFromSpec: true),
+        };
+
+        if (!string.IsNullOrWhiteSpace(existingToken))
+        {
+            environmentVariables.Add(new EnvironmentVariableSnapshot("BearerToken", existingToken, IsFromSpec: true));
+        }
+
         return builder
             .AddResource(resource)
             .WithInitialState(new CustomResourceSnapshot
             {
                 ResourceType = "JwtAuthority",
-                Properties =
-                [
-                    new ResourcePropertySnapshot("jwt.issuer", options.Issuer),
-                    new ResourcePropertySnapshot("jwt.audience", options.Audience),
-                ],
+                Properties = [],
+                EnvironmentVariables = [.. environmentVariables],
                 State = new ResourceStateSnapshot("Ready", KnownResourceStateStyles.Success),
                 StartTimeStamp = DateTime.UtcNow,
                 IconName = "LockClosed",
@@ -107,6 +119,171 @@ public static partial class SharedDevJwtExtensions
             .WithSharedDevJwt(authority);
     }
 
+    /// <param name="resource">The resource builder to configure.</param>
+    /// <typeparam name="T">The resource type.</typeparam>
+    extension<T>(IResourceBuilder<T> resource) where T : IResourceWithEnvironment
+    {
+        /// <summary>
+        /// Mints a development JWT at orchestration time and injects it into the resource as an
+        /// environment variable, so the resource can use it directly without needing to mint its
+        /// own token. When <paramref name="name"/> is <see langword="null"/> the token is stored
+        /// in <see cref="SharedDevJwtEnvironmentNames.BearerToken"/>; otherwise it is stored in
+        /// <c>DevJwt__BearerToken__{name}</c>. Call this method multiple times with different
+        /// names to inject tokens for different test scenarios.
+        /// </summary>
+        /// <param name="authority">The shared development JWT authority resource builder.</param>
+        /// <param name="name">Optional token name. When specified the environment variable becomes
+        /// <c>DevJwt__BearerToken__{name}</c>. Use <see cref="SharedDevJwtEnvironmentNames.GetBearerTokenName"/>
+        /// to resolve the variable name at runtime.</param>
+        /// <param name="subject">The <c>sub</c> claim. Defaults to <c>dev-user</c>.</param>
+        /// <param name="expiry">Token lifetime. Defaults to 30 minutes.</param>
+        /// <param name="roles">Optional role claims.</param>
+        /// <param name="scopes">Optional scope claims.</param>
+        /// <returns>The original <paramref name="resource"/> builder for chaining.</returns>
+        public IResourceBuilder<T> WithNewDevJwtToken(IResourceBuilder<DevJwtAuthorityResource> authority,
+            string? name = null,
+            string subject = "dev-user",
+            TimeSpan? expiry = null,
+            string[]? roles = null,
+            string[]? scopes = null)
+        {
+            ArgumentNullException.ThrowIfNull(resource);
+            ArgumentNullException.ThrowIfNull(authority);
+
+            var options = authority.Resource.Options;
+            var tokenExpiry = expiry ?? TimeSpan.FromMinutes(30);
+            var envVarName = SharedDevJwtEnvironmentNames.GetBearerTokenName(name);
+
+            return resource.WithEnvironment(ctx =>
+            {
+                if (ctx.ExecutionContext.IsPublishMode)
+                {
+                    return;
+                }
+
+                var signingKey = resource.ApplicationBuilder.Configuration[options.SigningKeySecretName];
+
+                if (string.IsNullOrWhiteSpace(signingKey))
+                {
+                    return;
+                }
+
+                var token = JwtTokenFactory.CreateToken(
+                    signingKey: signingKey,
+                    issuer: options.Issuer,
+                    audience: options.Audience,
+                    subject: subject,
+                    expiry: tokenExpiry,
+                    roles: roles,
+                    scopes: scopes);
+
+                ctx.EnvironmentVariables[envVarName] = token;
+            });
+        }
+
+        /// <summary>
+        /// Reads the most recently generated JWT from user-secrets
+        /// (<see cref="SharedDevJwtOptions.CurrentTokenSecretName"/>) and injects it into the
+        /// resource as an environment variable. This allows the test project to use a token
+        /// that was generated interactively via the Aspire dashboard's "Generate JWT" command.
+        /// </summary>
+        /// <param name="authority">The shared development JWT authority resource builder.</param>
+        /// <param name="name">Optional token name. When specified the environment variable becomes
+        /// <c>DevJwt__BearerToken__{name}</c>. Use <see cref="SharedDevJwtEnvironmentNames.GetBearerTokenName"/>
+        /// to resolve the variable name at runtime.</param>
+        /// <returns>The original <paramref name="resource"/> builder for chaining.</returns>
+        public IResourceBuilder<T> WithCurrentDevJwtToken(IResourceBuilder<DevJwtAuthorityResource> authority,
+            string? name = null)
+        {
+            ArgumentNullException.ThrowIfNull(resource);
+            ArgumentNullException.ThrowIfNull(authority);
+
+            var options = authority.Resource.Options;
+            var envVarName = SharedDevJwtEnvironmentNames.GetBearerTokenName(name);
+
+            return resource.WithEnvironment(ctx =>
+            {
+                if (ctx.ExecutionContext.IsPublishMode)
+                {
+                    return;
+                }
+
+                var token = resource.ApplicationBuilder.Configuration[options.CurrentTokenSecretName];
+
+                if (!string.IsNullOrWhiteSpace(token))
+                {
+                    ctx.EnvironmentVariables[envVarName] = token;
+                }
+            });
+        }
+
+        /// <summary>
+        /// Reads a saved token profile's claims from user-secrets and mints a fresh JWT at
+        /// orchestration time. The profile must have been created previously via the Aspire
+        /// dashboard's "Generate JWT" command. The minted token is injected as an environment
+        /// variable so the resource can use it directly.
+        /// </summary>
+        /// <param name="authority">The shared development JWT authority resource builder.</param>
+        /// <param name="profile">The name of the saved profile in user-secrets
+        /// (under <c>DevJwt:Profiles:{profile}:*</c>).</param>
+        /// <param name="name">Optional token name. When specified the environment variable becomes
+        /// <c>DevJwt__BearerToken__{name}</c>. Defaults to the <paramref name="profile"/> value.</param>
+        /// <returns>The original <paramref name="resource"/> builder for chaining.</returns>
+        public IResourceBuilder<T> WithDevJwtProfileToken(IResourceBuilder<DevJwtAuthorityResource> authority,
+            string profile,
+            string? name = null)
+        {
+            ArgumentNullException.ThrowIfNull(resource);
+            ArgumentNullException.ThrowIfNull(authority);
+            ArgumentException.ThrowIfNullOrWhiteSpace(profile);
+
+            var options = authority.Resource.Options;
+            var envVarName = SharedDevJwtEnvironmentNames.GetBearerTokenName(name ?? profile);
+
+            return resource.WithEnvironment(ctx =>
+            {
+                if (ctx.ExecutionContext.IsPublishMode)
+                {
+                    return;
+                }
+
+                var signingKey = resource.ApplicationBuilder.Configuration[options.SigningKeySecretName];
+
+                if (string.IsNullOrWhiteSpace(signingKey))
+                {
+                    return;
+                }
+
+                var config = resource.ApplicationBuilder.Configuration;
+                var prefix = $"{SharedDevJwtAuthority.ProfilesSection}:{profile}:";
+
+                var subject = config[$"{prefix}Subject"];
+
+                if (string.IsNullOrWhiteSpace(subject))
+                {
+                    return;
+                }
+
+                var expiry = ParseExpiry(config[$"{prefix}Expiry"]);
+                var roles = ParseCsv(config[$"{prefix}Roles"]);
+                var scopes = ParseCsv(config[$"{prefix}Scopes"]);
+                var customClaims = ParseCustomClaims(config[$"{prefix}CustomClaimsJson"]);
+
+                var token = JwtTokenFactory.CreateToken(
+                    signingKey: signingKey,
+                    issuer: options.Issuer,
+                    audience: options.Audience,
+                    subject: subject,
+                    expiry: expiry,
+                    roles: roles,
+                    scopes: scopes,
+                    customClaims: customClaims);
+
+                ctx.EnvironmentVariables[envVarName] = token;
+            });
+        }
+    }
+
     private static IResourceBuilder<DevJwtAuthorityResource> WithGenerateJwtCommand(
         this IResourceBuilder<DevJwtAuthorityResource> builder)
     {
@@ -125,6 +302,8 @@ public static partial class SharedDevJwtExtensions
             });
     }
 
+    private const string NewProfileSentinel = "__new__";
+
     private static async Task<ExecuteCommandResult> ExecuteGenerateJwtAsync(
         IResourceBuilder<DevJwtAuthorityResource> resourceBuilder,
         ExecuteCommandContext context)
@@ -133,20 +312,89 @@ public static partial class SharedDevJwtExtensions
         var loggerService = context.ServiceProvider.GetRequiredService<ResourceLoggerService>();
         var logger = loggerService.GetLogger(resourceBuilder.Resource);
 
+        var config = resourceBuilder.ApplicationBuilder.Configuration;
+
+        // --- Step 1: Profile selection ---
+        var profileNames = config.GetSection(SharedDevJwtAuthority.ProfilesSection)
+            .GetChildren()
+            .Select(s => s.Key)
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        string? selectedProfile = null;
+
+        if (profileNames.Count > 0)
+        {
+            var pickerInputs = new List<InteractionInput>
+            {
+                new()
+                {
+                    Name = "Profile",
+                    InputType = InputType.Choice,
+                    Required = true,
+                    Options =
+                    [
+                        .. profileNames.Select(n => new KeyValuePair<string, string>(n, n)),
+                        new(NewProfileSentinel, "(Create new)"),
+                    ],
+                },
+            };
+
+            var pickerResult = await interactionService.PromptInputsAsync(
+                title: "Select Token Profile",
+                message: "Choose a saved profile or create a new one:",
+                inputs: pickerInputs,
+                cancellationToken: context.CancellationToken);
+
+            if (pickerResult.Canceled)
+            {
+                return CommandResults.Failure("JWT generation was canceled by the user.");
+            }
+
+            var picked = pickerResult.Data[0].Value;
+            if (picked is not null && picked != NewProfileSentinel)
+            {
+                selectedProfile = picked;
+            }
+        }
+
+        // --- Step 2: Load saved values for selected profile ---
+        string? savedSubject = null, savedExpiry = null, savedRoles = null, savedScopes = null, savedCustomClaims = null;
+        if (selectedProfile is not null)
+        {
+            var prefix = $"{SharedDevJwtAuthority.ProfilesSection}:{selectedProfile}:";
+            savedSubject = config[$"{prefix}Subject"];
+            savedExpiry = config[$"{prefix}Expiry"];
+            savedRoles = config[$"{prefix}Roles"];
+            savedScopes = config[$"{prefix}Scopes"];
+            savedCustomClaims = config[$"{prefix}CustomClaimsJson"];
+        }
+
+        // --- Step 3: JWT generation form ---
         var inputs = new List<InteractionInput>
         {
+            new()
+            {
+                Name = "Profile Name",
+                InputType = InputType.Text,
+                Required = true,
+                Placeholder = "default",
+                Value = selectedProfile,
+            },
             new()
             {
                 Name = "Subject",
                 InputType = InputType.Text,
                 Required = true,
                 Placeholder = "dev-user",
+                Value = savedSubject,
             },
             new()
             {
                 Name = "Expiry",
                 InputType = InputType.Choice,
                 Required = true,
+                Value = savedExpiry,
                 Options =
                 [
                     new("15m", "15 Minutes"),
@@ -167,6 +415,7 @@ public static partial class SharedDevJwtExtensions
                 InputType = InputType.Text,
                 Required = false,
                 Placeholder = "admin,reader",
+                Value = savedRoles,
             },
             new()
             {
@@ -174,6 +423,7 @@ public static partial class SharedDevJwtExtensions
                 InputType = InputType.Text,
                 Required = false,
                 Placeholder = "api:read,api:write",
+                Value = savedScopes,
             },
             new()
             {
@@ -181,6 +431,7 @@ public static partial class SharedDevJwtExtensions
                 InputType = InputType.Text,
                 Required = false,
                 Placeholder = "{\"tenant\":\"acme\"}",
+                Value = savedCustomClaims,
             },
         };
 
@@ -205,11 +456,12 @@ public static partial class SharedDevJwtExtensions
                 return CommandResults.Failure("Signing key not found. Ensure the AppHost has a UserSecretsId.");
             }
 
-            var subject = result.Data[0].Value ?? "dev-user";
-            var expiryStr = result.Data[1].Value ?? "1d";
-            var rolesStr = result.Data[2].Value;
-            var scopesStr = result.Data[3].Value;
-            var customClaimsStr = result.Data[4].Value;
+            var profileName = result.Data[0].Value ?? "default";
+            var subject = result.Data[1].Value ?? "dev-user";
+            var expiryStr = result.Data[2].Value ?? "1d";
+            var rolesStr = result.Data[3].Value;
+            var scopesStr = result.Data[4].Value;
+            var customClaimsStr = result.Data[5].Value;
 
             var expiry = ParseExpiry(expiryStr);
             var roles = ParseCsv(rolesStr);
@@ -228,15 +480,29 @@ public static partial class SharedDevJwtExtensions
 
             WriteSecret(resourceBuilder.ApplicationBuilder, options.CurrentTokenSecretName, token);
 
+            var notificationService = context.ServiceProvider.GetRequiredService<ResourceNotificationService>();
+            await notificationService.PublishUpdateAsync(resourceBuilder.Resource, previous =>
+                previous with
+                {
+                    EnvironmentVariables = [
+                        .. previous.EnvironmentVariables.Where(e => e.Name != "BearerToken"),
+                        new("BearerToken", token, IsFromSpec: true),
+                    ],
+                });
+
+            PersistProfile(resourceBuilder.ApplicationBuilder, profileName, subject, expiryStr, rolesStr, scopesStr, customClaimsStr);
+
             logger.LogInformation(
                 """
                 JWT generated successfully.
+                Profile: {ProfileName}
                 Subject: {Subject}
                 Expiry: {Expiry}
                 Roles: {Roles}
                 Scopes: {Scopes}
                 Token stored in user-secret '{SecretName}'.
                 """,
+                profileName,
                 subject,
                 expiryStr,
                 rolesStr ?? "(none)",
@@ -319,6 +585,23 @@ public static partial class SharedDevJwtExtensions
     private static void WriteSecret(IDistributedApplicationBuilder builder, string key, string value)
     {
         builder.UserSecretsManager.TrySetSecret(key, value);
+    }
+
+    private static void PersistProfile(
+        IDistributedApplicationBuilder builder,
+        string profileName,
+        string subject,
+        string expiry,
+        string? roles,
+        string? scopes,
+        string? customClaimsJson)
+    {
+        var prefix = $"{SharedDevJwtAuthority.ProfilesSection}:{profileName}:";
+        WriteSecret(builder, $"{prefix}Subject", subject);
+        WriteSecret(builder, $"{prefix}Expiry", expiry);
+        WriteSecret(builder, $"{prefix}Roles", roles ?? string.Empty);
+        WriteSecret(builder, $"{prefix}Scopes", scopes ?? string.Empty);
+        WriteSecret(builder, $"{prefix}CustomClaimsJson", customClaimsJson ?? string.Empty);
     }
 
     [LoggerMessage(LogLevel.Error, "Failed to generate JWT token.")]

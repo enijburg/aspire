@@ -24,4 +24,18 @@ public static class SharedDevJwtEnvironmentNames
     /// <c>Authentication__Schemes__Bearer__SigningKeys__0__Value</c>
     /// </summary>
     public const string SigningKeyValue = "Authentication__Schemes__Bearer__SigningKeys__0__Value";
+
+    /// <summary>
+    /// <c>DevJwt__BearerToken</c> — the default (unnamed) pre-minted bearer token
+    /// injected by <see cref="SharedDevJwtExtensions.WithNewDevJwtToken{T}"/>.
+    /// </summary>
+    public const string BearerToken = "DevJwt__BearerToken";
+
+    /// <summary>
+    /// Returns the environment variable name for a named bearer token
+    /// (<c>DevJwt__BearerToken__{name}</c>), or the default <see cref="BearerToken"/>
+    /// when <paramref name="name"/> is <see langword="null"/> or empty.
+    /// </summary>
+    public static string GetBearerTokenName(string? name) =>
+        string.IsNullOrEmpty(name) ? BearerToken : $"{BearerToken}__{name}";
 }
