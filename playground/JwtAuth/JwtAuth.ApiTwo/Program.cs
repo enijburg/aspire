@@ -34,11 +34,11 @@ Product[] products =
     new(5, "Super Tool", 149.99m),
 ];
 
-app.MapGet("/products", [Authorize] () => products)
+app.MapGet("/products", [Authorize(Roles = "api-two")] () => products)
 .WithName("GetProducts")
 .WithSummary("Get product catalogue (requires bearer token)");
 
-app.MapGet("/products/{id:int}", [Authorize] (int id) =>
+app.MapGet("/products/{id:int}", [Authorize(Roles = "api-two")] (int id) =>
 {
     var product = products.FirstOrDefault(p => p.Id == id);
     return product is not null ? Results.Ok(product) : Results.NotFound();
@@ -46,7 +46,7 @@ app.MapGet("/products/{id:int}", [Authorize] (int id) =>
 .WithName("GetProductById")
 .WithSummary("Get a product by id (requires bearer token)");
 
-app.MapGet("/me", [Authorize] (ClaimsPrincipal user) =>
+app.MapGet("/me", [Authorize(Roles = "api-two")] (ClaimsPrincipal user) =>
     Results.Ok(new
     {
         username = user.Identity?.Name,
@@ -57,8 +57,3 @@ app.MapGet("/me", [Authorize] (ClaimsPrincipal user) =>
 .WithSummary("Get the current authenticated user (requires bearer token)");
 
 await app.RunAsync();
-
-namespace JwtAuth.ApiTwo
-{
-    internal record Product(int Id, string Name, decimal Price);
-}

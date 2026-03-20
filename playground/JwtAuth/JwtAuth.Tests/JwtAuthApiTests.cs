@@ -1,11 +1,14 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Claims;
 using System.Text.Json;
 using Aspire.Hosting.DevJwt;
 using JwtAuth.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace JwtAuth.Tests;
 
@@ -14,18 +17,47 @@ public sealed class JwtAuthApiTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    private static string _token = null!;
+    private static string _bothToken = null!;
+    private static string _apiOneToken = null!;
+    private static string _apiTwoToken = null!;
+    private static string _signingKey = null!;
+    private static string _issuer = null!;
+    private static string _audience = null!;
     private static IHost _host = null!;
     private static ILogger _logger = null!;
 
     [ClassInitialize]
     public static async Task ClassInitialize(TestContext context)
     {
-        // Read the pre-minted bearer token injected by the AppHost via WithNewDevJwtToken.
-        _token = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.GetBearerTokenName("test-user"))
+        // Read the pre-minted bearer tokens injected by the AppHost via WithNewDevJwtToken.
+        _bothToken = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.GetBearerTokenName("both-user"))
             ?? throw new InvalidOperationException(
                 $"Bearer token not found. Ensure the test is run via the JwtAuth AppHost " +
-                $"(expected env var: {SharedDevJwtEnvironmentNames.GetBearerTokenName("test-user")}).");
+                $"(expected env var: {SharedDevJwtEnvironmentNames.GetBearerTokenName("both-user")}).");
+
+        _apiOneToken = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.GetBearerTokenName("api-one-user"))
+            ?? throw new InvalidOperationException(
+                $"Bearer token not found. Ensure the test is run via the JwtAuth AppHost " +
+                $"(expected env var: {SharedDevJwtEnvironmentNames.GetBearerTokenName("api-one-user")}).");
+
+        _apiTwoToken = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.GetBearerTokenName("api-two-user"))
+            ?? throw new InvalidOperationException(
+                $"Bearer token not found. Ensure the test is run via the JwtAuth AppHost " +
+                $"(expected env var: {SharedDevJwtEnvironmentNames.GetBearerTokenName("api-two-user")}).");
+
+        // Read JWT authority config for crafting invalid tokens in the validation tests below.
+        _signingKey = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.SigningKeyValue)
+            ?? throw new InvalidOperationException(
+                $"Signing key not found. Ensure WithSharedDevJwt is configured on the tests project " +
+                $"(expected env var: {SharedDevJwtEnvironmentNames.SigningKeyValue}).");
+
+        _issuer = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.ValidIssuer)
+            ?? throw new InvalidOperationException(
+                $"Issuer not found (expected env var: {SharedDevJwtEnvironmentNames.ValidIssuer}).");
+
+        _audience = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.ValidAudiences)
+            ?? throw new InvalidOperationException(
+                $"Audience not found (expected env var: {SharedDevJwtEnvironmentNames.ValidAudiences}).");
 
         // Build a lightweight host that reuses the shared ServiceDefaults configuration:
         // OpenTelemetry (tracing + metrics + OTLP export), service discovery, and resilience.
@@ -54,7 +86,7 @@ public sealed class JwtAuthApiTests
         await _host.StartAsync();
 
         _logger = _host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<JwtAuthApiTests>();
-        _logger.LogInformation("Bearer token loaded from environment (injected by AppHost via WithNewDevJwtToken).");
+        _logger.LogInformation("Bearer tokens loaded from environment (injected by AppHost via WithNewDevJwtToken).");
     }
 
     [ClassCleanup]
@@ -69,7 +101,7 @@ public sealed class JwtAuthApiTests
     [TracedTestMethod]
     public async Task ApiOne_GetWeatherForecast_ReturnsForecasts()
     {
-        using var client = CreateAuthenticatedClient("api-one");
+        using var client = CreateAuthenticatedClient("api-one", _bothToken);
 
         var response = await client.GetAsync("/weatherforecast");
 
@@ -86,7 +118,7 @@ public sealed class JwtAuthApiTests
     [TracedTestMethod]
     public async Task ApiOne_GetMe_ReturnsAuthenticatedUser()
     {
-        using var client = CreateAuthenticatedClient("api-one");
+        using var client = CreateAuthenticatedClient("api-one", _bothToken);
 
         var response = await client.GetAsync("/me");
 
@@ -104,7 +136,7 @@ public sealed class JwtAuthApiTests
     [TracedTestMethod]
     public async Task ApiTwo_GetProducts_ReturnsProductCatalogue()
     {
-        using var client = CreateAuthenticatedClient("api-two");
+        using var client = CreateAuthenticatedClient("api-two", _bothToken);
 
         var response = await client.GetAsync("/products");
 
@@ -121,7 +153,7 @@ public sealed class JwtAuthApiTests
     [TracedTestMethod]
     public async Task ApiTwo_GetProductById_ReturnsProduct()
     {
-        using var client = CreateAuthenticatedClient("api-two");
+        using var client = CreateAuthenticatedClient("api-two", _bothToken);
 
         var response = await client.GetAsync("/products/1");
 
@@ -137,7 +169,7 @@ public sealed class JwtAuthApiTests
     [TracedTestMethod(HttpStatusCode.NotFound)]
     public async Task ApiTwo_GetProductById_ReturnsNotFoundForMissing()
     {
-        using var client = CreateAuthenticatedClient("api-two");
+        using var client = CreateAuthenticatedClient("api-two", _bothToken);
 
         var response = await client.GetAsync("/products/9999");
 
@@ -150,7 +182,7 @@ public sealed class JwtAuthApiTests
     [TracedTestMethod]
     public async Task ApiTwo_GetMe_ReturnsAuthenticatedUser()
     {
-        using var client = CreateAuthenticatedClient("api-two");
+        using var client = CreateAuthenticatedClient("api-two", _bothToken);
 
         var response = await client.GetAsync("/me");
 
@@ -230,13 +262,157 @@ public sealed class JwtAuthApiTests
         LogEndpointReport("ApiTwo", "GET /me (no token)", response.StatusCode, "(empty - 401 Unauthorized)");
     }
 
+    // ----------------------- Role-based access tests -------------------------
+
+    [TracedTestMethod]
+    public async Task ApiOne_WithApiOneToken_ReturnsForecasts()
+    {
+        using var client = CreateAuthenticatedClient("api-one", _apiOneToken);
+
+        var response = await client.GetAsync("/weatherforecast");
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+
+        TestActivityScope.ReportStatusCode(response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        LogEndpointReport("ApiOne", "GET /weatherforecast (api-one role)", response.StatusCode, body);
+    }
+
+    [TracedTestMethod(HttpStatusCode.Forbidden)]
+    public async Task ApiOne_WithApiTwoTokenOnly_ReturnsForbidden()
+    {
+        using var client = CreateAuthenticatedClient("api-one", _apiTwoToken);
+
+        var response = await client.GetAsync("/weatherforecast");
+
+        Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
+
+        TestActivityScope.ReportStatusCode(response.StatusCode);
+        LogEndpointReport("ApiOne", "GET /weatherforecast (api-two role only)", response.StatusCode, "(empty - 403 Forbidden)");
+    }
+
+    [TracedTestMethod]
+    public async Task ApiTwo_WithApiTwoToken_ReturnsProducts()
+    {
+        using var client = CreateAuthenticatedClient("api-two", _apiTwoToken);
+
+        var response = await client.GetAsync("/products");
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+
+        TestActivityScope.ReportStatusCode(response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        LogEndpointReport("ApiTwo", "GET /products (api-two role)", response.StatusCode, body);
+    }
+
+    [TracedTestMethod(HttpStatusCode.Forbidden)]
+    public async Task ApiTwo_WithApiOneTokenOnly_ReturnsForbidden()
+    {
+        using var client = CreateAuthenticatedClient("api-two", _apiOneToken);
+
+        var response = await client.GetAsync("/products");
+
+        Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
+
+        TestActivityScope.ReportStatusCode(response.StatusCode);
+        LogEndpointReport("ApiTwo", "GET /products (api-one role only)", response.StatusCode, "(empty - 403 Forbidden)");
+    }
+
+    // ------------- Invalid token tests (JWT validation is strict) -------------
+
+    [TracedTestMethod(HttpStatusCode.Unauthorized)]
+    public async Task ApiOne_WithExpiredToken_ReturnsUnauthorized()
+    {
+        // Create a token issued 3 hours ago with a 1-hour TTL — it expired 2 hours ago,
+        // well outside the default 5-minute clock-skew tolerance.
+        var expiredToken = CreateTokenWithCustomTimestamps(
+            signingKey: _signingKey,
+            issuer: _issuer,
+            audience: _audience,
+            issuedAt: DateTime.UtcNow.AddHours(-3),
+            expiry: TimeSpan.FromHours(1),
+            roles: ["api-one"]);
+
+        using var client = CreateAuthenticatedClient("api-one", expiredToken);
+        var response = await client.GetAsync("/weatherforecast");
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        TestActivityScope.ReportStatusCode(response.StatusCode);
+        LogEndpointReport("ApiOne", "GET /weatherforecast (expired token)", response.StatusCode, "(empty - 401 Unauthorized)");
+    }
+
+    [TracedTestMethod(HttpStatusCode.Unauthorized)]
+    public async Task ApiOne_WithWrongIssuer_ReturnsUnauthorized()
+    {
+        // Valid key and audience but wrong issuer — the API rejects it.
+        var wrongIssuerToken = JwtTokenFactory.CreateToken(
+            signingKey: _signingKey,
+            issuer: "https://wrong-issuer.example.com",
+            audience: _audience,
+            subject: "test-user",
+            expiry: TimeSpan.FromMinutes(30),
+            roles: ["api-one"]);
+
+        using var client = CreateAuthenticatedClient("api-one", wrongIssuerToken);
+        var response = await client.GetAsync("/weatherforecast");
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        TestActivityScope.ReportStatusCode(response.StatusCode);
+        LogEndpointReport("ApiOne", "GET /weatherforecast (wrong issuer)", response.StatusCode, "(empty - 401 Unauthorized)");
+    }
+
+    [TracedTestMethod(HttpStatusCode.Unauthorized)]
+    public async Task ApiOne_WithWrongAudience_ReturnsUnauthorized()
+    {
+        // Valid key and issuer but wrong audience — the API rejects it.
+        var wrongAudienceToken = JwtTokenFactory.CreateToken(
+            signingKey: _signingKey,
+            issuer: _issuer,
+            audience: "wrong-audience",
+            subject: "test-user",
+            expiry: TimeSpan.FromMinutes(30),
+            roles: ["api-one"]);
+
+        using var client = CreateAuthenticatedClient("api-one", wrongAudienceToken);
+        var response = await client.GetAsync("/weatherforecast");
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        TestActivityScope.ReportStatusCode(response.StatusCode);
+        LogEndpointReport("ApiOne", "GET /weatherforecast (wrong audience)", response.StatusCode, "(empty - 401 Unauthorized)");
+    }
+
+    [TracedTestMethod(HttpStatusCode.Unauthorized)]
+    public async Task ApiOne_WithWrongSigningKey_ReturnsUnauthorized()
+    {
+        // Token is structurally valid (correct issuer/audience) but signed with a different key.
+        var wrongSigningKey = JwtTokenFactory.GenerateSigningKey();
+        var wrongKeyToken = JwtTokenFactory.CreateToken(
+            signingKey: wrongSigningKey,
+            issuer: _issuer,
+            audience: _audience,
+            subject: "test-user",
+            expiry: TimeSpan.FromMinutes(30),
+            roles: ["api-one"]);
+
+        using var client = CreateAuthenticatedClient("api-one", wrongKeyToken);
+        var response = await client.GetAsync("/weatherforecast");
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        TestActivityScope.ReportStatusCode(response.StatusCode);
+        LogEndpointReport("ApiOne", "GET /weatherforecast (wrong signing key)", response.StatusCode, "(empty - 401 Unauthorized)");
+    }
+
 
     // --------------------------------- Helpers --------------------------------
 
-    private static HttpClient CreateAuthenticatedClient(string serviceName)
+    private static HttpClient CreateAuthenticatedClient(string serviceName, string token)
     {
         var client = CreateUnauthenticatedClient(serviceName);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _token);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return client;
     }
 
@@ -244,6 +420,47 @@ public sealed class JwtAuthApiTests
     {
         var factory = _host.Services.GetRequiredService<IHttpClientFactory>();
         return factory.CreateClient(serviceName);
+    }
+
+    /// <summary>
+    /// Creates a JWT with explicit <paramref name="issuedAt"/> and <paramref name="expiry"/>
+    /// timestamps, allowing tests to produce tokens that appear expired at runtime.
+    /// </summary>
+    private static string CreateTokenWithCustomTimestamps(
+        string signingKey,
+        string issuer,
+        string audience,
+        DateTime issuedAt,
+        TimeSpan expiry,
+        string[]? roles = null)
+    {
+        var keyBytes = Convert.FromBase64String(signingKey);
+        var securityKey = new SymmetricSecurityKey(keyBytes);
+        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, "test-user"),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+        };
+
+        if (roles is not null)
+        {
+            foreach (var role in roles)
+            {
+                claims.Add(new Claim(ClaimTypes.Role, role));
+            }
+        }
+
+        var token = new JwtSecurityToken(
+            issuer: issuer,
+            audience: audience,
+            claims: claims,
+            notBefore: issuedAt,
+            expires: issuedAt.Add(expiry),
+            signingCredentials: credentials);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
     private static string PrettyPrint(string json)

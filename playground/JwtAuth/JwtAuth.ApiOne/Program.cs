@@ -27,7 +27,7 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/weatherforecast", [Authorize] () =>
+app.MapGet("/weatherforecast", [Authorize(Roles = "api-one")] () =>
 {
     var summaries = new[] { "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching" };
     var forecast = Enumerable.Range(1, 5).Select(index =>
@@ -43,7 +43,7 @@ app.MapGet("/weatherforecast", [Authorize] () =>
 .WithName("GetWeatherForecast")
 .WithSummary("Get weather forecast (requires bearer token)");
 
-app.MapGet("/me", [Authorize] (ClaimsPrincipal user) =>
+app.MapGet("/me", [Authorize(Roles = "api-one")] (ClaimsPrincipal user) =>
     Results.Ok(new
     {
         username = user.Identity?.Name,
@@ -54,11 +54,3 @@ app.MapGet("/me", [Authorize] (ClaimsPrincipal user) =>
 .WithSummary("Get the current authenticated user (requires bearer token)");
 
 await app.RunAsync();
-
-namespace JwtAuth.ApiOne
-{
-    internal record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-    {
-        public int TemperatureF => 32 + (int)(TemperatureC * 9 / 5.0);
-    }
-}
