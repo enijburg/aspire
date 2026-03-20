@@ -30,8 +30,8 @@ The AppHost creates a shared development JWT authority (`dev-jwt`) and distribut
 | Project | Description |
 |---|---|
 | **JwtAuth.AppHost** | Aspire orchestrator. Registers the JWT authority, both APIs, and the test project. |
-| **JwtAuth.ApiOne** | Minimal API with `/weatherforecast` and `/me` endpoints, protected by `[Authorize]`. |
-| **JwtAuth.ApiTwo** | Minimal API with `/products`, `/products/{id}`, and `/me` endpoints, protected by `[Authorize]`. |
+| **JwtAuth.ApiOne** | Minimal API with `/weatherforecast` and `/me` endpoints, protected by `[Authorize(Roles = "api-one")]`. |
+| **JwtAuth.ApiTwo** | Minimal API with `/products`, `/products/{id}`, and `/me` endpoints, protected by `[Authorize(Roles = "api-two")]`. |
 | **JwtAuth.Tests** | MSTest integration tests that run against both APIs using pre-minted JWTs injected by the AppHost. |
 | **JwtAuth.ServiceDefaults** | Shared Aspire service defaults (OpenTelemetry, resilience, service discovery). |
 | **Aspire.Hosting.DevJwt** | Reusable library providing the `AddSharedDevJwtAuthority`, `AddJwtProject`, `WithSharedDevJwt`, `WithNewDevJwtToken`, `WithCurrentDevJwtToken`, and `WithDevJwtProfileToken` extension methods, plus the dashboard "Generate JWT" command with named profile support. |
@@ -65,23 +65,23 @@ The AppHost creates a shared development JWT authority (`dev-jwt`) and distribut
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET | `/weatherforecast` | Bearer | Returns 5 random weather forecasts. |
-| GET | `/me` | Bearer | Returns the authenticated user's claims with `"service": "ApiOne"`. |
+| GET | `/weatherforecast` | Bearer (`api-one` role) | Returns 5 random weather forecasts. |
+| GET | `/me` | Bearer (`api-one` role) | Returns the authenticated user's claims with `"service": "ApiOne"`. |
 
 ### ApiTwo (`api-two`)
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET | `/products` | Bearer | Returns the full product catalogue. |
-| GET | `/products/{id}` | Bearer | Returns a single product or 404. |
-| GET | `/me` | Bearer | Returns the authenticated user's claims with `"service": "ApiTwo"`. |
+| GET | `/products` | Bearer (`api-two` role) | Returns the full product catalogue. |
+| GET | `/products/{id}` | Bearer (`api-two` role) | Returns a single product or 404. |
+| GET | `/me` | Bearer (`api-two` role) | Returns the authenticated user's claims with `"service": "ApiTwo"`. |
 
 ## Test Project
 
 `JwtAuth.Tests` is an MSTest project registered in the AppHost with `AddProject` and configured with:
 
 - **`WithCurrentDevJwtToken(devJwt)`** — reads the most recently dashboard-generated JWT from user-secrets and injects it as the default `DevJwt__BearerToken`. This allows tests to use tokens created interactively via the Aspire dashboard's "Generate JWT" command.
-- **`WithNewDevJwtToken(devJwt, ...)`** — mints a signed JWT at orchestration time and injects it as an environment variable. Called multiple times with different `name` values to provide tokens for different test scenarios (e.g. `test-user`, `readonly`, `noscopes`). The test reads tokens via `SharedDevJwtEnvironmentNames.GetBearerTokenName(name)`.
+- **`WithNewDevJwtToken(devJwt, ...)`** — mints a signed JWT at orchestration time and injects it as an environment variable. Called multiple times with different `name` values to provide tokens for different test scenarios (e.g. `api-one-user`, `both-user`, `api-two-user`, `noscopes`). The test reads tokens via `SharedDevJwtEnvironmentNames.GetBearerTokenName(name)`.
 - **`WithReference(apiOne)` / `WithReference(apiTwo)`** — receives service endpoint URLs as `services__api-one__https__0` (and `http` fallback) environment variables.
 - **`WaitFor(apiOne)` / `WaitFor(apiTwo)`** — ensures both APIs are healthy before the tests start.
 - **`WithArgs("--settings", "test.runsettings")`** — passes the runsettings file to the MSTest runner so `Console.WriteLine` output flows to stdout and appears in the Aspire dashboard console logs.
@@ -149,28 +149,36 @@ public async Task ApiOne_WithoutToken_ReturnsUnauthorized()
 
 ### Test Coverage
 
-Every endpoint on both APIs is covered by an **authenticated** (happy-path) test and an **unauthorized** (no-token → 401) test:
+Every endpoint on both APIs is covered by an **authenticated** (happy-path) test and an **unauthorized** (no-token → 401) test. Additional role-based tests verify that a token with only the `api-one` role is forbidden from `api-two` (and vice versa):
 
-| Test | API | Endpoint | Expected |
-|---|---|---|---|
-| `ApiOne_GetWeatherForecast_ReturnsForecasts` | ApiOne | `GET /weatherforecast` | 200 OK |
-| `ApiOne_GetMe_ReturnsAuthenticatedUser` | ApiOne | `GET /me` | 200 OK |
-| `ApiTwo_GetProducts_ReturnsProductCatalogue` | ApiTwo | `GET /products` | 200 OK |
-| `ApiTwo_GetProductById_ReturnsProduct` | ApiTwo | `GET /products/1` | 200 OK |
-| `ApiTwo_GetProductById_ReturnsNotFoundForMissing` | ApiTwo | `GET /products/9999` | 404 Not Found |
-| `ApiTwo_GetMe_ReturnsAuthenticatedUser` | ApiTwo | `GET /me` | 200 OK |
-| `ApiOne_WithoutToken_ReturnsUnauthorized` | ApiOne | `GET /weatherforecast` | 401 Unauthorized |
-| `ApiOne_GetMe_WithoutToken_ReturnsUnauthorized` | ApiOne | `GET /me` | 401 Unauthorized |
-| `ApiTwo_WithoutToken_ReturnsUnauthorized` | ApiTwo | `GET /products` | 401 Unauthorized |
-| `ApiTwo_GetProductById_WithoutToken_ReturnsUnauthorized` | ApiTwo | `GET /products/1` | 401 Unauthorized |
-| `ApiTwo_GetMe_WithoutToken_ReturnsUnauthorized` | ApiTwo | `GET /me` | 401 Unauthorized |
+| Test | API | Endpoint | Token | Expected |
+|---|---|---|---|---|
+| `ApiOne_GetWeatherForecast_ReturnsForecasts` | ApiOne | `GET /weatherforecast` | `both-user` | 200 OK |
+| `ApiOne_GetMe_ReturnsAuthenticatedUser` | ApiOne | `GET /me` | `both-user` | 200 OK |
+| `ApiTwo_GetProducts_ReturnsProductCatalogue` | ApiTwo | `GET /products` | `both-user` | 200 OK |
+| `ApiTwo_GetProductById_ReturnsProduct` | ApiTwo | `GET /products/1` | `both-user` | 200 OK |
+| `ApiTwo_GetProductById_ReturnsNotFoundForMissing` | ApiTwo | `GET /products/9999` | `both-user` | 404 Not Found |
+| `ApiTwo_GetMe_ReturnsAuthenticatedUser` | ApiTwo | `GET /me` | `both-user` | 200 OK |
+| `ApiOne_WithoutToken_ReturnsUnauthorized` | ApiOne | `GET /weatherforecast` | *(none)* | 401 Unauthorized |
+| `ApiOne_GetMe_WithoutToken_ReturnsUnauthorized` | ApiOne | `GET /me` | *(none)* | 401 Unauthorized |
+| `ApiTwo_WithoutToken_ReturnsUnauthorized` | ApiTwo | `GET /products` | *(none)* | 401 Unauthorized |
+| `ApiTwo_GetProductById_WithoutToken_ReturnsUnauthorized` | ApiTwo | `GET /products/1` | *(none)* | 401 Unauthorized |
+| `ApiTwo_GetMe_WithoutToken_ReturnsUnauthorized` | ApiTwo | `GET /me` | *(none)* | 401 Unauthorized |
+| `ApiOne_WithApiOneToken_ReturnsForecasts` | ApiOne | `GET /weatherforecast` | `api-one-user` | 200 OK |
+| `ApiOne_WithApiTwoTokenOnly_ReturnsForbidden` | ApiOne | `GET /weatherforecast` | `api-two-user` | 403 Forbidden |
+| `ApiTwo_WithApiTwoToken_ReturnsProducts` | ApiTwo | `GET /products` | `api-two-user` | 200 OK |
+| `ApiTwo_WithApiOneTokenOnly_ReturnsForbidden` | ApiTwo | `GET /products` | `api-one-user` | 403 Forbidden |
 
 ### Test Flow
 
-1. `ClassInitialize` reads the pre-minted bearer token from the `DevJwt__BearerToken__test-user` environment variable (injected by `WithNewDevJwtToken` at orchestration time, read via `SharedDevJwtEnvironmentNames.GetBearerTokenName("test-user")`).
+1. `ClassInitialize` reads the pre-minted bearer tokens from environment variables injected by `WithNewDevJwtToken` at orchestration time (read via `SharedDevJwtEnvironmentNames.GetBearerTokenName(name)`):
+   - `both-user` → token with both `api-one` and `api-two` roles (used for happy-path tests against both APIs).
+   - `api-one-user` → token with only the `api-one` role (used to verify access to ApiOne and 403 from ApiTwo).
+   - `api-two-user` → token with only the `api-two` role (used to verify access to ApiTwo and 403 from ApiOne).
 2. A lightweight `IHost` is built with Aspire service defaults for service discovery and OpenTelemetry.
-3. Each test creates an `HttpClient` with the bearer token and calls API endpoints.
+3. Each test creates an `HttpClient` with the appropriate bearer token and calls API endpoints.
 4. Unauthorized access tests verify that requests without a token return `401`.
+5. Role-based access tests verify that a token with only one API's role returns `403 Forbidden` from the other API.
 
 ### Running the Tests
 
@@ -201,8 +209,9 @@ var apiTwo = builder.AddJwtProject<Projects.JwtAuth_ApiTwo>("api-two", devJwt);
 
 builder.AddProject<Projects.JwtAuth_Tests>("tests")
     .WithCurrentDevJwtToken(devJwt)
-    .WithNewDevJwtToken(devJwt, name: "test-user", subject: "test-user", roles: ["admin", "reader"])
-    .WithNewDevJwtToken(devJwt, name: "readonly", subject: "test-reader", roles: ["reader"])
+    .WithNewDevJwtToken(devJwt, name: "api-one-user", subject: "api-one-user", roles: ["api-one"])
+    .WithNewDevJwtToken(devJwt, name: "both-user", subject: "both-user", roles: ["api-one", "api-two"])
+    .WithNewDevJwtToken(devJwt, name: "api-two-user", subject: "api-two-user", roles: ["api-two"])
     .WithNewDevJwtToken(devJwt, name: "noscopes", subject: "test-bare")
     .WithReference(apiOne)
     .WithReference(apiTwo)
