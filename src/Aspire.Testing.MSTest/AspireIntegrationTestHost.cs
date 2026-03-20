@@ -223,7 +223,14 @@ public sealed class AspireIntegrationTestHost : IAsyncDisposable
         {
             return _app!.GetEndpoint(resourceName, endpointName);
         }
-        catch
+        catch (ArgumentException)
+        {
+            // If the preferred endpoint is not available, try the fallback.
+            var fallback = string.Equals(endpointName, "https", StringComparison.OrdinalIgnoreCase)
+                ? "http" : "https";
+            return _app!.GetEndpoint(resourceName, fallback);
+        }
+        catch (InvalidOperationException)
         {
             // If the preferred endpoint is not available, try the fallback.
             var fallback = string.Equals(endpointName, "https", StringComparison.OrdinalIgnoreCase)
