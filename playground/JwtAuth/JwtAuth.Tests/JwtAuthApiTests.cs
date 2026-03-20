@@ -3,9 +3,9 @@ using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Json;
 using Aspire.Hosting.DevJwt;
+using Aspire.Testing.MSTest;
 using JwtAuth.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -23,7 +23,7 @@ public sealed class JwtAuthApiTests
     private static string _signingKey = null!;
     private static string _issuer = null!;
     private static string _audience = null!;
-    private static IHost _host = null!;
+    private static AspireIntegrationTestHost _testHost = null!;
     private static ILogger _logger = null!;
 
     [ClassInitialize]
@@ -59,41 +59,25 @@ public sealed class JwtAuthApiTests
             ?? throw new InvalidOperationException(
                 $"Audience not found (expected env var: {SharedDevJwtEnvironmentNames.ValidAudiences}).");
 
-        // Build a lightweight host that reuses the shared ServiceDefaults configuration:
-        // OpenTelemetry (tracing + metrics + OTLP export), service discovery, and resilience.
-        // Named HttpClients for api-one / api-two resolve via Aspire service discovery.
-        var hostBuilder = Host.CreateApplicationBuilder();
-        hostBuilder.AddServiceDefaults();
-
-        // Register the test ActivitySource so spans appear in the Aspire dashboard
-        hostBuilder.Services.AddOpenTelemetry()
-            .WithTracing(tracing => tracing.AddSource(TracedTestMethodAttribute.TestActivitySource.Name));
-
-        hostBuilder.Services.ConfigureHttpClientDefaults(http =>
+        // Delegate all Aspire plumbing (host construction, HttpClient registration,
+        // OpenTelemetry, dev-cert bypass) to the reusable AspireIntegrationTestHost.
+        _testHost = new AspireIntegrationTestHost(new AspireIntegrationTestHostOptions
         {
-            http.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-            {
-                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-            });
+            Resources = [new ResourceEndpoint("api-one"), new ResourceEndpoint("api-two")],
+            ActivitySourceNames = [TracedTestMethodAttribute.TestActivitySource.Name],
+            ConfigureServiceDefaults = builder => builder.AddServiceDefaults(),
         });
 
-        hostBuilder.Services.AddHttpClient("api-one", client =>
-            client.BaseAddress = new Uri("https+http://api-one"));
-        hostBuilder.Services.AddHttpClient("api-two", client =>
-            client.BaseAddress = new Uri("https+http://api-two"));
+        await _testHost.InitializeAsync();
 
-        _host = hostBuilder.Build();
-        await _host.StartAsync();
-
-        _logger = _host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<JwtAuthApiTests>();
+        _logger = _testHost.Host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<JwtAuthApiTests>();
         _logger.LogInformation("Bearer tokens loaded from environment (injected by AppHost via WithNewDevJwtToken).");
     }
 
     [ClassCleanup]
     public static async Task ClassCleanup()
     {
-        await _host.StopAsync();
-        _host.Dispose();
+        await _testHost.DisposeAsync();
     }
 
     // ------------------------------ ApiOne tests ------------------------------
@@ -418,8 +402,7 @@ public sealed class JwtAuthApiTests
 
     private static HttpClient CreateUnauthenticatedClient(string serviceName)
     {
-        var factory = _host.Services.GetRequiredService<IHttpClientFactory>();
-        return factory.CreateClient(serviceName);
+        return _testHost.CreateClient(serviceName);
     }
 
     /// <summary>

@@ -19,5 +19,6 @@
   <Folder Name="/src/">
     <Project Path="src/Aspire.Hosting.Groups/Aspire.Hosting.Groups.csproj" />
     <Project Path="src/Aspire.Hosting.DevJwt/Aspire.Hosting.DevJwt.csproj" />
+    <Project Path="src/Aspire.Testing.MSTest/Aspire.Testing.MSTest.csproj" />
   </Folder>
 </Solution>
