@@ -57,8 +57,3 @@ app.MapGet("/me", [Authorize(Roles = "api-two")] (ClaimsPrincipal user) =>
 .WithSummary("Get the current authenticated user (requires bearer token)");
 
 await app.RunAsync();
-
-namespace JwtAuth.ApiTwo
-{
-    internal record Product(int Id, string Name, decimal Price);
-}

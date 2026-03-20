@@ -54,11 +54,3 @@ app.MapGet("/me", [Authorize(Roles = "api-one")] (ClaimsPrincipal user) =>
 .WithSummary("Get the current authenticated user (requires bearer token)");
 
 await app.RunAsync();
-
-namespace JwtAuth.ApiOne
-{
-    internal record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-    {
-        public int TemperatureF => 32 + (int)(TemperatureC * 9 / 5.0);
-    }
-}
