@@ -9,9 +9,11 @@ internal class HelloOrchestrator : TaskOrchestrator<string, string>
 {
     public override async Task<string> RunAsync(TaskOrchestrationContext context, string input)
     {
-        var result = await context.CallActivityAsync<string>(nameof(SayHelloActivity), "Tokyo") + " ";
-        result += await context.CallActivityAsync<string>(nameof(SayHelloActivity), "London") + " ";
-        result += await context.CallActivityAsync<string>(nameof(SayHelloActivity), input);
-        return result;
+        var results = await Task.WhenAll(
+            context.CallActivityAsync<string>(nameof(SayHelloActivity), "Tokyo"),
+            context.CallActivityAsync<string>(nameof(SayHelloActivity), "London"),
+            context.CallActivityAsync<string>(nameof(SayHelloActivity), input));
+
+        return string.Join(" ", results);
     }
 }
