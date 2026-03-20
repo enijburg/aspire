@@ -10,8 +10,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.DurableTask.Client.Grpc" />
-    <PackageReference Include="Microsoft.DurableTask.Worker.Grpc" />
+    <PackageReference Include="Microsoft.DurableTask.Client.AzureManaged" />
+    <PackageReference Include="Microsoft.DurableTask.Worker.AzureManaged" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
   </ItemGroup>
 

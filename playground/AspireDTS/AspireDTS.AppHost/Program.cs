@@ -3,6 +3,7 @@ var builder = DistributedApplication.CreateBuilder(args);
 // Azure Durable Task Scheduler emulator for local development
 var dts = builder.AddContainer("dts-emulator", "mcr.microsoft.com/dts/dts-emulator", "latest")
     .WithEndpoint(name: "grpc", targetPort: 8080)
+    .WithHttpEndpoint(name: "http", targetPort: 8081)
     .WithHttpEndpoint(name: "dashboard", targetPort: 8082)
     .ExcludeFromManifest();
 
@@ -14,17 +15,14 @@ var sql = builder.AddSqlServer("sql")
 
 var db = sql.AddDatabase("aspiradts");
 
+var grpcEndpoint = dts.GetEndpoint("grpc");
+var dtsConnectionString = ReferenceExpression.Create($"Endpoint=http://{grpcEndpoint.Property(EndpointProperty.Host)}:{grpcEndpoint.Property(EndpointProperty.Port)};TaskHub=default;Authentication=None");
+
 // Worker service – receives the DTS connection string and SQL database reference
 builder.AddProject<Projects.AspireDTS_Worker>("worker")
     .WithReference(db)
     .WaitFor(sql)
-    .WithEnvironment(ctx =>
-    {
-        ctx.EnvironmentVariables["DURABLE_TASK_SCHEDULER_CONNECTION_STRING"] =
-            ReferenceExpression.Create(
-                $"Endpoint=http://{dtsGrpcEndpoint.Property(EndpointProperty.Host)}:{dtsGrpcEndpoint.Property(EndpointProperty.Port)};Authentication=None");
-    })
-    .WithEnvironment("TASKHUB_NAME", "default")
+    .WithEnvironment("DURABLE_TASK_SCHEDULER_CONNECTION_STRING", dtsConnectionString)
     .WaitFor(dts);
 
 await builder.Build().RunAsync();

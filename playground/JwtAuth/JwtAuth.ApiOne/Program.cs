@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using JwtAuth.ApiOne;
+using JwtAuth.ServiceDefaults;
 using Microsoft.AspNetCore.Authorization;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -53,7 +55,10 @@ app.MapGet("/me", [Authorize] (ClaimsPrincipal user) =>
 
 await app.RunAsync();
 
-internal record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+namespace JwtAuth.ApiOne
 {
-    public int TemperatureF => 32 + (int)(TemperatureC * 9 / 5.0);
+    internal record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+    {
+        public int TemperatureF => 32 + (int)(TemperatureC * 9 / 5.0);
+    }
 }

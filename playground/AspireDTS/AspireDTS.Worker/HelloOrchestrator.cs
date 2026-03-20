@@ -1,5 +1,7 @@
 using Microsoft.DurableTask;
 
+namespace AspireDTS.Worker;
+
 /// <summary>
 /// Sample orchestrator that calls the <see cref="SayHelloActivity"/> for a given city name.
 /// </summary>

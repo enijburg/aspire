@@ -1,20 +1,21 @@
+using AspireDTS.ServiceDefaults;
+using AspireDTS.Worker;
 using Microsoft.DurableTask.Client;
+using Microsoft.DurableTask.Client.AzureManaged;
 using Microsoft.DurableTask.Worker;
+using Microsoft.DurableTask.Worker.AzureManaged;
 
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.AddServiceDefaults();
 
-// Parse the gRPC endpoint from the DTS connection string injected by AppHost
-// Connection string format: Endpoint=http://host:port;Authentication=None
-var dtsConnectionString = builder.Configuration["DURABLE_TASK_SCHEDULER_CONNECTION_STRING"]
-    ?? "Endpoint=http://localhost:8080;Authentication=None";
-var taskHubName = builder.Configuration["TASKHUB_NAME"] ?? "default";
-var dtsEndpoint = ParseDtsEndpoint(dtsConnectionString);
+var dtsConnectionString =
+    builder.Configuration.GetValue<string>("DURABLE_TASK_SCHEDULER_CONNECTION_STRING")
+    ?? throw new InvalidOperationException("DURABLE_TASK_SCHEDULER_CONNECTION_STRING is not set");
 
 builder.Services.AddDurableTaskWorker(workerBuilder =>
 {
-    workerBuilder.UseGrpc(dtsEndpoint);
+    workerBuilder.UseDurableTaskScheduler(dtsConnectionString);
     workerBuilder.AddTasks(registry =>
     {
         registry.AddOrchestrator<HelloOrchestrator>();
@@ -24,24 +25,10 @@ builder.Services.AddDurableTaskWorker(workerBuilder =>
 
 builder.Services.AddDurableTaskClient(clientBuilder =>
 {
-    clientBuilder.UseGrpc(dtsEndpoint);
+    clientBuilder.UseDurableTaskScheduler(dtsConnectionString);
 });
 
 builder.Services.AddHostedService<DurableTaskWorkerService>();
 
 var app = builder.Build();
 await app.RunAsync();
-
-static string ParseDtsEndpoint(string connectionString)
-{
-    foreach (var segment in connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries))
-    {
-        var pair = segment.Split('=', 2);
-        if (pair.Length == 2 && pair[0].Trim().Equals("Endpoint", StringComparison.OrdinalIgnoreCase))
-        {
-            return pair[1].Trim();
-        }
-    }
-
-    return "http://localhost:8080";
-}
