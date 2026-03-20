@@ -7,8 +7,6 @@ var dts = builder.AddContainer("dts-emulator", "mcr.microsoft.com/dts/dts-emulat
     .WithHttpEndpoint(name: "dashboard", targetPort: 8082)
     .ExcludeFromManifest();
 
-var dtsGrpcEndpoint = dts.GetEndpoint("grpc");
-
 // SQL Server with a persistent lifetime so data survives AppHost restarts
 var sql = builder.AddSqlServer("sql")
     .WithLifetime(ContainerLifetime.Persistent);
