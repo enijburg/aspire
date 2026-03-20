@@ -25,4 +25,10 @@ builder.AddProject<Projects.AspireDTS_Worker>("worker")
     .WithEnvironment("DURABLE_TASK_SCHEDULER_CONNECTION_STRING", dtsConnectionString)
     .WaitFor(dts);
 
+// Client service – schedules orchestrations against the DTS
+builder.AddProject<Projects.AspireDTS_Client>("client")
+    .WithEnvironment("DURABLE_TASK_SCHEDULER_CONNECTION_STRING", dtsConnectionString)
+    .WaitFor(dts)
+    .WithExplicitStart();
+
 await builder.Build().RunAsync();

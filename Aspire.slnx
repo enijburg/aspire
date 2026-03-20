@@ -3,6 +3,7 @@
     <Project Path="playground/AspireGroupSupport/AspireGroupSupport.csproj" />
     <Project Path="playground/AspireDTS/AspireDTS.AppHost/AspireDTS.AppHost.csproj" />
     <Project Path="playground/AspireDTS/AspireDTS.Worker/AspireDTS.Worker.csproj" />
+    <Project Path="playground/AspireDTS/AspireDTS.Client/AspireDTS.Client.csproj" />
     <Project Path="playground/AspireDTS/AspireDTS.ServiceDefaults/AspireDTS.ServiceDefaults.csproj" />
     <Project Path="playground/JwtAuth/JwtAuth.AppHost/JwtAuth.AppHost.csproj" />
     <Project Path="playground/JwtAuth/JwtAuth.ApiOne/JwtAuth.ApiOne.csproj" />

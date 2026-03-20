@@ -1,7 +1,5 @@
 using AspireDTS.ServiceDefaults;
 using AspireDTS.Worker;
-using Microsoft.DurableTask.Client;
-using Microsoft.DurableTask.Client.AzureManaged;
 using Microsoft.DurableTask.Worker;
 using Microsoft.DurableTask.Worker.AzureManaged;
 
@@ -22,13 +20,6 @@ builder.Services.AddDurableTaskWorker(workerBuilder =>
         registry.AddActivity<SayHelloActivity>();
     });
 });
-
-builder.Services.AddDurableTaskClient(clientBuilder =>
-{
-    clientBuilder.UseDurableTaskScheduler(dtsConnectionString);
-});
-
-builder.Services.AddHostedService<DurableTaskWorkerService>();
 
 var app = builder.Build();
 await app.RunAsync();

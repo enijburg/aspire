@@ -4,14 +4,13 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <UserSecretsId>d4e5f6a7-b8c9-0123-defa-123456789013</UserSecretsId>
+    <UserSecretsId>e5f6a7b8-c9d0-1234-efab-234567890124</UserSecretsId>
     <!-- Suppress XML doc warnings – this is an internal playground project -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.DurableTask.Worker.AzureManaged" />
-    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Microsoft.DurableTask.Client.AzureManaged" />
   </ItemGroup>
 
   <ItemGroup>

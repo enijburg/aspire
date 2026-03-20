@@ -11,6 +11,7 @@
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.SqlServer" />
     <ProjectReference Include="..\AspireDTS.Worker\AspireDTS.Worker.csproj" />
+    <ProjectReference Include="..\AspireDTS.Client\AspireDTS.Client.csproj" />
   </ItemGroup>
 
 </Project>
