@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using JwtAuth.ApiTwo;
+using JwtAuth.ServiceDefaults;
 using Microsoft.AspNetCore.Authorization;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -56,4 +58,7 @@ app.MapGet("/me", [Authorize] (ClaimsPrincipal user) =>
 
 await app.RunAsync();
 
-internal record Product(int Id, string Name, decimal Price);
+namespace JwtAuth.ApiTwo
+{
+    internal record Product(int Id, string Name, decimal Price);
+}
