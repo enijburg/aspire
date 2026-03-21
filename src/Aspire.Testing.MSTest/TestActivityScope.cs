@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace JwtAuth.Tests;
+namespace Aspire.Testing.MSTest;
 
 /// <summary>
 /// Provides an ambient scope for test methods to report their observed HTTP status code

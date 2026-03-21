@@ -212,8 +212,11 @@ public sealed class AspireIntegrationTestHost : IHost, IAsyncDisposable
         }
         else
         {
-            // Suppress console logging in standalone mode to reduce noise.
+            // Replace the default console logger with a minimal provider that writes
+            // to Console.Out — MSTest captures stdout per-test and shows it in the
+            // test detail summary.
             hostBuilder.Logging.ClearProviders();
+            hostBuilder.Logging.AddProvider(new TestContextLoggerProvider());
         }
 
         // Register OpenTelemetry tracing for the requested activity sources.

@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Aspire.Hosting.DevJwt\Aspire.Hosting.DevJwt.csproj" />
     <ProjectReference Include="..\..\..\src\Aspire.Testing.MSTest\Aspire.Testing.MSTest.csproj" />
+    <ProjectReference Include="..\JwtAuth.AppHost\JwtAuth.AppHost.csproj" IsAspireProjectResource="false" />
     <ProjectReference Include="..\JwtAuth.ServiceDefaults\JwtAuth.ServiceDefaults.csproj" />
   </ItemGroup>
 

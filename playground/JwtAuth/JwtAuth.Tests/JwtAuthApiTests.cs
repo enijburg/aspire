@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Reflection;
 using System.Security.Claims;
 using System.Text.Json;
 using Aspire.Hosting.DevJwt;
+using Aspire.Hosting.Testing;
 using Aspire.Testing.MSTest;
 using JwtAuth.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,49 +31,107 @@ public sealed class JwtAuthApiTests
     [ClassInitialize]
     public static async Task ClassInitialize(TestContext context)
     {
-        // Read the pre-minted bearer tokens injected by the AppHost via WithNewDevJwtToken.
-        _bothToken = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.GetBearerTokenName("both-user"))
-            ?? throw new InvalidOperationException(
-                $"Bearer token not found. Ensure the test is run via the JwtAuth AppHost " +
-                $"(expected env var: {SharedDevJwtEnvironmentNames.GetBearerTokenName("both-user")}).");
+        // In standalone mode, the signing key is captured from the AppHost's configuration
+        // after CreateAsync runs the AppHost code (which calls EnsureSigningKey).
+        string? standaloneSigningKey = null;
 
-        _apiOneToken = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.GetBearerTokenName("api-one-user"))
-            ?? throw new InvalidOperationException(
-                $"Bearer token not found. Ensure the test is run via the JwtAuth AppHost " +
-                $"(expected env var: {SharedDevJwtEnvironmentNames.GetBearerTokenName("api-one-user")}).");
-
-        _apiTwoToken = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.GetBearerTokenName("api-two-user"))
-            ?? throw new InvalidOperationException(
-                $"Bearer token not found. Ensure the test is run via the JwtAuth AppHost " +
-                $"(expected env var: {SharedDevJwtEnvironmentNames.GetBearerTokenName("api-two-user")}).");
-
-        // Read JWT authority config for crafting invalid tokens in the validation tests below.
-        _signingKey = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.SigningKeyValue)
-            ?? throw new InvalidOperationException(
-                $"Signing key not found. Ensure WithSharedDevJwt is configured on the tests project " +
-                $"(expected env var: {SharedDevJwtEnvironmentNames.SigningKeyValue}).");
-
-        _issuer = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.ValidIssuer)
-            ?? throw new InvalidOperationException(
-                $"Issuer not found (expected env var: {SharedDevJwtEnvironmentNames.ValidIssuer}).");
-
-        _audience = Environment.GetEnvironmentVariable(SharedDevJwtEnvironmentNames.ValidAudiences)
-            ?? throw new InvalidOperationException(
-                $"Audience not found (expected env var: {SharedDevJwtEnvironmentNames.ValidAudiences}).");
-
-        // Delegate all Aspire plumbing (host construction, HttpClient registration,
-        // OpenTelemetry, dev-cert bypass) to the reusable AspireIntegrationTestHost.
+        // Build the Aspire test host. Mode detection (AppHost vs standalone) happens
+        // inside BuildAsync by checking the OTEL_EXPORTER_OTLP_ENDPOINT env var.
         _testHost = await AspireIntegrationTestHost.CreateBuilder()
             .WithResource("api-one")
             .WithResource("api-two")
             .WithActivitySource(TracedTestMethodAttribute.TestActivitySource.Name)
             .WithServiceDefaults(builder => builder.AddServiceDefaults())
+            .WithStandaloneBuilder(async () =>
+            {
+                // Load the AppHost assembly and use CreateAsync with its entry point type.
+                // CreateAsync invokes the AppHost's top-level statements, which configure
+                // the JWT authority, api-one, api-two, and tests resources on the builder.
+                var appHostAssembly = Assembly.Load("JwtAuth.AppHost");
+                var entryPointType = appHostAssembly.EntryPoint?.DeclaringType
+                    ?? throw new InvalidOperationException(
+                        "Could not find the entry point type in the JwtAuth.AppHost assembly.");
+
+                return await DistributedApplicationTestingBuilder.CreateAsync(entryPointType, []);
+            })
+            .ConfigureStandaloneBuilder(builder =>
+            {
+                // Capture the signing key that was generated/loaded by the AppHost code
+                // (via EnsureSigningKey in AddSharedDevJwtAuthority).
+                standaloneSigningKey = builder.Configuration[SharedDevJwtAuthority.DefaultSigningKeySecret];
+            })
             .BuildAsync();
 
         await _testHost.StartAsync();
 
+        if (_testHost.IsStandalone)
+        {
+            // Standalone mode: mint tokens locally using the same signing key
+            // the AppHost injected into the API projects.
+            _signingKey = standaloneSigningKey
+                ?? throw new InvalidOperationException(
+                    "Failed to read signing key from AppHost configuration.");
+            _issuer = SharedDevJwtAuthority.DefaultIssuer;
+            _audience = SharedDevJwtAuthority.DefaultAudience;
+
+            _bothToken = JwtTokenFactory.CreateToken(
+                signingKey: _signingKey, issuer: _issuer, audience: _audience,
+                subject: "both-user", expiry: TimeSpan.FromMinutes(30),
+                roles: ["api-one", "api-two"]);
+
+            _apiOneToken = JwtTokenFactory.CreateToken(
+                signingKey: _signingKey, issuer: _issuer, audience: _audience,
+                subject: "api-one-user", expiry: TimeSpan.FromMinutes(30),
+                roles: ["api-one"]);
+
+            _apiTwoToken = JwtTokenFactory.CreateToken(
+                signingKey: _signingKey, issuer: _issuer, audience: _audience,
+                subject: "api-two-user", expiry: TimeSpan.FromMinutes(30),
+                roles: ["api-two"]);
+        }
+        else
+        {
+            // AppHost mode: read pre-minted bearer tokens injected by the AppHost
+            // via WithNewDevJwtToken.
+            _bothToken = Environment.GetEnvironmentVariable(
+                    SharedDevJwtEnvironmentNames.GetBearerTokenName("both-user"))
+                ?? throw new InvalidOperationException(
+                    $"Bearer token not found. Ensure the test is run via the JwtAuth AppHost " +
+                    $"(expected env var: {SharedDevJwtEnvironmentNames.GetBearerTokenName("both-user")}).");
+
+            _apiOneToken = Environment.GetEnvironmentVariable(
+                    SharedDevJwtEnvironmentNames.GetBearerTokenName("api-one-user"))
+                ?? throw new InvalidOperationException(
+                    $"Bearer token not found. Ensure the test is run via the JwtAuth AppHost " +
+                    $"(expected env var: {SharedDevJwtEnvironmentNames.GetBearerTokenName("api-one-user")}).");
+
+            _apiTwoToken = Environment.GetEnvironmentVariable(
+                    SharedDevJwtEnvironmentNames.GetBearerTokenName("api-two-user"))
+                ?? throw new InvalidOperationException(
+                    $"Bearer token not found. Ensure the test is run via the JwtAuth AppHost " +
+                    $"(expected env var: {SharedDevJwtEnvironmentNames.GetBearerTokenName("api-two-user")}).");
+
+            // Read JWT authority config for crafting invalid tokens in the validation tests.
+            _signingKey = Environment.GetEnvironmentVariable(
+                    SharedDevJwtEnvironmentNames.SigningKeyValue)
+                ?? throw new InvalidOperationException(
+                    $"Signing key not found. Ensure WithSharedDevJwt is configured on the tests project " +
+                    $"(expected env var: {SharedDevJwtEnvironmentNames.SigningKeyValue}).");
+
+            _issuer = Environment.GetEnvironmentVariable(
+                    SharedDevJwtEnvironmentNames.ValidIssuer)
+                ?? throw new InvalidOperationException(
+                    $"Issuer not found (expected env var: {SharedDevJwtEnvironmentNames.ValidIssuer}).");
+
+            _audience = Environment.GetEnvironmentVariable(
+                    SharedDevJwtEnvironmentNames.ValidAudiences)
+                ?? throw new InvalidOperationException(
+                    $"Audience not found (expected env var: {SharedDevJwtEnvironmentNames.ValidAudiences}).");
+        }
+
         _logger = _testHost.Services.GetRequiredService<ILoggerFactory>().CreateLogger<JwtAuthApiTests>();
-        _logger.LogInformation("Bearer tokens loaded from environment (injected by AppHost via WithNewDevJwtToken).");
+        _logger.LogInformation("Test host started in {Mode} mode.",
+            _testHost.IsStandalone ? "standalone" : "AppHost");
     }
 
     [ClassCleanup]
