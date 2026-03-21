@@ -287,9 +287,6 @@ public sealed class AspireIntegrationTestHost : IHost, IAsyncDisposable
             }
         }
 
-        // Let the consumer apply additional configuration.
-        _options.ConfigureHostBuilder?.Invoke(hostBuilder);
-
         _host = hostBuilder.Build();
     }
 

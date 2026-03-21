@@ -53,13 +53,6 @@ public sealed class AspireIntegrationTestHostOptions
     public Action<IHostApplicationBuilder>? ConfigureServiceDefaults { get; set; }
 
     /// <summary>
-    /// An optional callback to apply additional configuration to the lightweight
-    /// <see cref="IHost"/> builder (e.g. registering extra services, adjusting logging).
-    /// Invoked in both AppHost and standalone modes after the default configuration.
-    /// </summary>
-    public Action<IHostApplicationBuilder>? ConfigureHostBuilder { get; set; }
-
-    /// <summary>
     /// Activity source names to register with OpenTelemetry tracing so that test spans
     /// appear in the Aspire dashboard.
     /// </summary>

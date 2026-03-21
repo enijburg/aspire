@@ -11,11 +11,10 @@ public sealed class AspireIntegrationTestHostBuilder
 {
     private readonly List<ResourceEndpoint> _resources = [];
     private readonly List<string> _activitySourceNames = [];
-    private string _appHostDetectionEnvVar = "OTEL_EXPORTER_OTLP_ENDPOINT";
+    private const string AppHostDetectionEnvVar = "OTEL_EXPORTER_OTLP_ENDPOINT";
     private Func<Task<IDistributedApplicationTestingBuilder>>? _createStandaloneBuilder;
     private Action<IDistributedApplicationTestingBuilder>? _configureStandaloneBuilder;
     private Action<IHostApplicationBuilder>? _configureServiceDefaults;
-    private Action<IHostApplicationBuilder>? _configureHostBuilder;
 
     /// <summary>
     /// Adds a resource endpoint to register a named <see cref="HttpClient"/> for.
@@ -52,19 +51,6 @@ public sealed class AspireIntegrationTestHostBuilder
     {
         ArgumentNullException.ThrowIfNull(name);
         _activitySourceNames.Add(name);
-        return this;
-    }
-
-    /// <summary>
-    /// Sets the environment variable name used to detect whether the test is running
-    /// under an Aspire AppHost. Default is <c>OTEL_EXPORTER_OTLP_ENDPOINT</c>.
-    /// </summary>
-    /// <param name="envVarName">The environment variable name.</param>
-    /// <returns>This builder for chaining.</returns>
-    public AspireIntegrationTestHostBuilder WithAppHostDetection(string envVarName)
-    {
-        ArgumentNullException.ThrowIfNull(envVarName);
-        _appHostDetectionEnvVar = envVarName;
         return this;
     }
 
@@ -118,21 +104,6 @@ public sealed class AspireIntegrationTestHostBuilder
     }
 
     /// <summary>
-    /// Applies additional configuration to the lightweight host builder (e.g. registering
-    /// extra services, adjusting logging). Invoked in both AppHost and standalone modes
-    /// after the default configuration.
-    /// </summary>
-    /// <param name="configure">The configuration callback.</param>
-    /// <returns>This builder for chaining.</returns>
-    public AspireIntegrationTestHostBuilder ConfigureHostBuilder(
-        Action<IHostApplicationBuilder> configure)
-    {
-        ArgumentNullException.ThrowIfNull(configure);
-        _configureHostBuilder = configure;
-        return this;
-    }
-
-    /// <summary>
     /// Builds the <see cref="AspireIntegrationTestHost"/>. In standalone mode this also
     /// creates and starts the <see cref="Aspire.Hosting.DistributedApplication"/>,
     /// waits for resources to reach the <c>Running</c> state, and resolves their endpoints.
@@ -145,12 +116,11 @@ public sealed class AspireIntegrationTestHostBuilder
     {
         var options = new AspireIntegrationTestHostOptions
         {
-            AppHostDetectionEnvVar = _appHostDetectionEnvVar,
+            AppHostDetectionEnvVar = AppHostDetectionEnvVar,
             Resources = _resources,
             CreateStandaloneBuilder = _createStandaloneBuilder,
             ConfigureStandaloneBuilder = _configureStandaloneBuilder,
             ConfigureServiceDefaults = _configureServiceDefaults,
-            ConfigureHostBuilder = _configureHostBuilder,
             ActivitySourceNames = _activitySourceNames,
         };
 
