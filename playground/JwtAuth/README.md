@@ -32,9 +32,10 @@ The AppHost creates a shared development JWT authority (`dev-jwt`) and distribut
 | **JwtAuth.AppHost** | Aspire orchestrator. Registers the JWT authority, both APIs, and the test project. |
 | **JwtAuth.ApiOne** | Minimal API with `/weatherforecast` and `/me` endpoints, protected by `[Authorize(Roles = "api-one")]`. |
 | **JwtAuth.ApiTwo** | Minimal API with `/products`, `/products/{id}`, and `/me` endpoints, protected by `[Authorize(Roles = "api-two")]`. |
-| **JwtAuth.Tests** | MSTest integration tests that run against both APIs using pre-minted JWTs injected by the AppHost. |
+| **JwtAuth.Tests** | MSTest integration tests that run against both APIs using pre-minted JWTs. Supports both AppHost-orchestrated and standalone execution via `AspireIntegrationTestHost`. |
 | **JwtAuth.ServiceDefaults** | Shared Aspire service defaults (OpenTelemetry, resilience, service discovery). |
 | **Aspire.Hosting.DevJwt** | Reusable library providing the `AddSharedDevJwtAuthority`, `AddJwtProject`, `WithSharedDevJwt`, `WithNewDevJwtToken`, `WithCurrentDevJwtToken`, and `WithDevJwtProfileToken` extension methods, plus the dashboard "Generate JWT" command with named profile support. |
+| **Aspire.Testing.MSTest** | Reusable library providing `AspireIntegrationTestHost` — an `IHost` implementation with a fluent builder API for Aspire integration tests. Supports dual-mode execution (AppHost-orchestrated and standalone). |
 
 ## How JWT Authentication Works
 
@@ -78,7 +79,54 @@ The AppHost creates a shared development JWT authority (`dev-jwt`) and distribut
 
 ## Test Project
 
-`JwtAuth.Tests` is an MSTest project registered in the AppHost with `AddProject` and configured with:
+`JwtAuth.Tests` is an MSTest project that supports two execution modes:
+
+- **AppHost mode** — launched by the Aspire orchestrator. Tokens and JWT authority config are injected as environment variables.
+- **Standalone mode** — launched from Test Explorer, ReSharper, or CI. The test builds and starts the AppHost's `DistributedApplication` itself, waits for resources to be ready, and mints tokens locally.
+
+Mode detection is automatic: if `OTEL_EXPORTER_OTLP_ENDPOINT` is set (which the Aspire orchestrator always provides), the test runs in AppHost mode; otherwise it falls back to standalone.
+
+### `AspireIntegrationTestHost` Builder Pattern
+
+The test uses `AspireIntegrationTestHost` (from `Aspire.Testing.MSTest`) which implements `IHost` and provides a fluent builder API:
+
+```csharp
+_testHost = await AspireIntegrationTestHost.CreateBuilder()
+    .WithResource("api-one")
+    .WithResource("api-two")
+    .WithActivitySource(TracedTestMethodAttribute.TestActivitySource.Name)
+    .WithServiceDefaults(builder => builder.AddServiceDefaults())
+    .WithStandaloneBuilder(async () =>
+    {
+        var appHostAssembly = Assembly.Load("JwtAuth.AppHost");
+        var entryPointType = appHostAssembly.EntryPoint?.DeclaringType
+            ?? throw new InvalidOperationException("...");
+        return await DistributedApplicationTestingBuilder.CreateAsync(entryPointType, []);
+    })
+    .ConfigureStandaloneBuilder(builder =>
+    {
+        standaloneSigningKey = builder.Configuration[SharedDevJwtAuthority.DefaultSigningKeySecret];
+    })
+    .BuildAsync();
+
+await _testHost.StartAsync();
+```
+
+| Builder method | Purpose |
+|---|---|
+| `WithResource(name)` | Registers a named `HttpClient` for the resource. In standalone mode, also waits for the resource to reach `Running` and resolves its endpoint. |
+| `WithActivitySource(name)` | Registers an OpenTelemetry activity source so test spans appear in the Aspire dashboard. |
+| `WithServiceDefaults(cb)` | Applies Aspire service defaults (service discovery, resilience, OTLP) — only in AppHost mode. |
+| `WithStandaloneBuilder(factory)` | Provides the factory that creates the `IDistributedApplicationTestingBuilder` for standalone mode. |
+| `ConfigureStandaloneBuilder(cb)` | Further configures the testing builder in standalone mode (e.g. reading config after the AppHost code runs). |
+| `ConfigureHostBuilder(cb)` | Applies additional configuration to the lightweight `IHost` builder in both modes. |
+| `BuildAsync()` | Returns a configured but not-yet-started `AspireIntegrationTestHost`. |
+
+Since `AspireIntegrationTestHost` implements `IHost`, consumers use `_testHost.Services` directly and call `StartAsync()`/`StopAsync()`/`DisposeAsync()` following the standard host contract.
+
+### AppHost Registration
+
+The test project is registered in the AppHost with:
 
 - **`WithCurrentDevJwtToken(devJwt)`** — reads the most recently dashboard-generated JWT from user-secrets and injects it as the default `DevJwt__BearerToken`. This allows tests to use tokens created interactively via the Aspire dashboard's "Generate JWT" command.
 - **`WithNewDevJwtToken(devJwt, ...)`** — mints a signed JWT at orchestration time and injects it as an environment variable. Called multiple times with different `name` values to provide tokens for different test scenarios (e.g. `api-one-user`, `both-user`, `api-two-user`, `noscopes`). The test reads tokens via `SharedDevJwtEnvironmentNames.GetBearerTokenName(name)`.
@@ -171,18 +219,27 @@ Every endpoint on both APIs is covered by an **authenticated** (happy-path) test
 
 ### Test Flow
 
-1. `ClassInitialize` reads the pre-minted bearer tokens from environment variables injected by `WithNewDevJwtToken` at orchestration time (read via `SharedDevJwtEnvironmentNames.GetBearerTokenName(name)`):
+1. `ClassInitialize` builds an `AspireIntegrationTestHost` using the builder pattern. Mode detection happens inside `BuildAsync()` by checking the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable.
+
+2. **AppHost mode** — the host reads pre-minted bearer tokens from environment variables injected by `WithNewDevJwtToken` at orchestration time (via `SharedDevJwtEnvironmentNames.GetBearerTokenName(name)`):
    - `both-user` → token with both `api-one` and `api-two` roles (used for happy-path tests against both APIs).
    - `api-one-user` → token with only the `api-one` role (used to verify access to ApiOne and 403 from ApiTwo).
    - `api-two-user` → token with only the `api-two` role (used to verify access to ApiTwo and 403 from ApiOne).
-2. A lightweight `IHost` is built with Aspire service defaults for service discovery and OpenTelemetry.
-3. Each test creates an `HttpClient` with the appropriate bearer token and calls API endpoints.
-4. Unauthorized access tests verify that requests without a token return `401`.
-5. Role-based access tests verify that a token with only one API's role returns `403 Forbidden` from the other API.
+   - JWT authority config (signing key, issuer, audience) is read from environment variables for crafting invalid tokens in the validation tests.
+
+3. **Standalone mode** — the host creates and starts a `DistributedApplication` from the `JwtAuth.AppHost` assembly, waits for `api-one` and `api-two` resources to reach `Running`, and resolves their endpoints directly. Tokens are minted locally using the same signing key the AppHost configured.
+
+4. The host is started (`StartAsync`), and startup logs are flushed to `TestContext` via `FlushStartupLog()`.
+
+5. Each test creates an `HttpClient` via `_testHost.CreateClient(serviceName)` with the appropriate bearer token and calls API endpoints.
+
+6. `ClassCleanup` calls `DisposeAsync()` on the host, which stops the lightweight `IHost` and (in standalone mode) the `DistributedApplication`.
 
 ### Running the Tests
 
-Start the AppHost (F5 or `dotnet run` from `JwtAuth.AppHost`), then trigger the `tests` resource from the Aspire dashboard. The tests will execute in-process using the MSTest runner and report results back to the dashboard.
+**AppHost mode:** Start the AppHost (F5 or `dotnet run` from `JwtAuth.AppHost`), then trigger the `tests` resource from the Aspire dashboard. The tests will execute in-process using the MSTest runner and report results back to the dashboard.
+
+**Standalone mode:** Run the tests directly from your IDE's Test Explorer, ReSharper, or `dotnet test` from the `JwtAuth.Tests` directory. The `AspireIntegrationTestHost` will automatically detect standalone mode, build and start the AppHost's `DistributedApplication`, wait for resources, and mint tokens locally.
 
 ## Generate JWT Command and Named Profiles
 

@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Runtime.CompilerServices;
 
-namespace JwtAuth.Tests;
+namespace Aspire.Testing.MSTest;
 
 /// <summary>
 /// A custom MSTest attribute that automatically wraps each test method with
@@ -24,7 +24,7 @@ public sealed class TracedTestMethodAttribute(
     /// Shared <see cref="ActivitySource"/> used for all test activities.
     /// Also referenced by helper methods that create sub-activities (e.g. report helpers).
     /// </summary>
-    internal static readonly ActivitySource TestActivitySource = new("JwtAuth.Tests");
+    public static readonly ActivitySource TestActivitySource = new("Aspire.Testing.MSTest");
 
     /// <summary>
     /// The HTTP status code the test expects to observe.
@@ -34,7 +34,7 @@ public sealed class TracedTestMethodAttribute(
     /// <inheritdoc />
     public override async Task<TestResult[]> ExecuteAsync(ITestMethod testMethod)
     {
-        using var activity = TestActivitySource.StartActivity(testMethod.TestMethodName, ActivityKind.Internal);
+        using var activity = TestActivitySource.StartActivity(testMethod.TestMethodName);
         activity?.SetTag("test.name", testMethod.TestMethodName);
         activity?.SetTag("test.expected_status_code", (int)ExpectedStatusCode);
         activity?.SetTag("test.expects_success", (int)ExpectedStatusCode < 400);
