@@ -61,16 +61,16 @@ public sealed class JwtAuthApiTests
 
         // Delegate all Aspire plumbing (host construction, HttpClient registration,
         // OpenTelemetry, dev-cert bypass) to the reusable AspireIntegrationTestHost.
-        _testHost = new AspireIntegrationTestHost(new AspireIntegrationTestHostOptions
-        {
-            Resources = [new ResourceEndpoint("api-one"), new ResourceEndpoint("api-two")],
-            ActivitySourceNames = [TracedTestMethodAttribute.TestActivitySource.Name],
-            ConfigureServiceDefaults = builder => builder.AddServiceDefaults(),
-        });
+        _testHost = await AspireIntegrationTestHost.CreateBuilder()
+            .WithResource("api-one")
+            .WithResource("api-two")
+            .WithActivitySource(TracedTestMethodAttribute.TestActivitySource.Name)
+            .WithServiceDefaults(builder => builder.AddServiceDefaults())
+            .BuildAsync();
 
-        await _testHost.InitializeAsync();
+        await _testHost.StartAsync();
 
-        _logger = _testHost.Host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<JwtAuthApiTests>();
+        _logger = _testHost.Services.GetRequiredService<ILoggerFactory>().CreateLogger<JwtAuthApiTests>();
         _logger.LogInformation("Bearer tokens loaded from environment (injected by AppHost via WithNewDevJwtToken).");
     }
 

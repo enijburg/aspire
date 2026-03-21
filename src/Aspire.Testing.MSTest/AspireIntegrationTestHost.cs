@@ -17,8 +17,9 @@ namespace Aspire.Testing.MSTest;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Call <see cref="InitializeAsync"/> from <c>[ClassInitialize]</c> and
-/// <see cref="DisposeAsync"/> from <c>[ClassCleanup]</c>.
+/// Create an instance using <see cref="CreateBuilder()"/> and the fluent
+/// <see cref="AspireIntegrationTestHostBuilder"/> API, then call
+/// <see cref="StartAsync(CancellationToken)"/> to start the host.
 /// </para>
 /// <para>
 /// In AppHost mode the host uses Aspire service-discovery URIs for named
@@ -28,18 +29,15 @@ namespace Aspire.Testing.MSTest;
 /// instead.
 /// </para>
 /// </remarks>
-public sealed class AspireIntegrationTestHost : IAsyncDisposable
+public sealed class AspireIntegrationTestHost : IHost, IAsyncDisposable
 {
     private readonly AspireIntegrationTestHostOptions _options;
     private DistributedApplication? _app;
     private IHost? _host;
     private ILoggerFactory? _standaloneLoggerFactory;
+    private bool _started;
 
-    /// <summary>
-    /// Initializes a new instance of <see cref="AspireIntegrationTestHost"/> with the
-    /// specified <paramref name="options"/>.
-    /// </summary>
-    public AspireIntegrationTestHost(AspireIntegrationTestHostOptions options)
+    internal AspireIntegrationTestHost(AspireIntegrationTestHostOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
     }
@@ -51,21 +49,102 @@ public sealed class AspireIntegrationTestHost : IAsyncDisposable
     public bool IsStandalone { get; private set; }
 
     /// <summary>
-    /// The lightweight <see cref="IHost"/> that provides <see cref="IHttpClientFactory"/>
-    /// and OpenTelemetry integration.
+    /// The service provider from the lightweight host, providing access to
+    /// <see cref="IHttpClientFactory"/>, <see cref="ILoggerFactory"/>, and other
+    /// registered services.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when accessed before <see cref="InitializeAsync"/> has completed.
+    /// Thrown when accessed before <see cref="AspireIntegrationTestHostBuilder.BuildAsync"/>
+    /// has completed.
     /// </exception>
-    public IHost Host => _host ?? throw new InvalidOperationException(
-        "Host not initialized. Call InitializeAsync first.");
+    public IServiceProvider Services => _host?.Services ?? throw new InvalidOperationException(
+        "Host not built. Use AspireIntegrationTestHost.CreateBuilder().BuildAsync() to build the host.");
 
     /// <summary>
-    /// Detects the execution mode, optionally builds and starts a
-    /// <see cref="DistributedApplication"/> (standalone), constructs the lightweight
-    /// <see cref="IHost"/>, and starts it.
+    /// Starts the lightweight host. Call this after obtaining the host from
+    /// <see cref="AspireIntegrationTestHostBuilder.BuildAsync"/>.
     /// </summary>
-    public async Task InitializeAsync()
+    /// <param name="cancellationToken">A token to cancel the start operation.</param>
+    public async Task StartAsync(CancellationToken cancellationToken = default)
+    {
+        if (_host is null)
+        {
+            throw new InvalidOperationException(
+                "Host not built. Use AspireIntegrationTestHost.CreateBuilder().BuildAsync() to build the host.");
+        }
+
+        if (!_started)
+        {
+            await _host.StartAsync(cancellationToken);
+            _started = true;
+        }
+    }
+
+    /// <summary>
+    /// Stops the lightweight host and, if running in standalone mode, the
+    /// <see cref="DistributedApplication"/>.
+    /// </summary>
+    /// <param name="cancellationToken">A token to cancel the stop operation.</param>
+    public async Task StopAsync(CancellationToken cancellationToken = default)
+    {
+        if (_host is not null && _started)
+        {
+            await _host.StopAsync(cancellationToken);
+            _started = false;
+        }
+
+        if (_app is not null)
+        {
+            await _app.StopAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Creates an <see cref="HttpClient"/> for the named resource, backed by the
+    /// <see cref="IHttpClientFactory"/> registered in the lightweight host.
+    /// </summary>
+    public HttpClient CreateClient(string serviceName)
+    {
+        var factory = Services.GetRequiredService<IHttpClientFactory>();
+        return factory.CreateClient(serviceName);
+    }
+
+    /// <summary>
+    /// Creates a new <see cref="AspireIntegrationTestHostBuilder"/> for configuring and
+    /// building an <see cref="AspireIntegrationTestHost"/>.
+    /// </summary>
+    /// <returns>A new builder instance.</returns>
+    public static AspireIntegrationTestHostBuilder CreateBuilder() => new();
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+
+    /// <inheritdoc />
+    public async ValueTask DisposeAsync()
+    {
+        if (_started)
+        {
+            await StopAsync();
+        }
+
+        _host?.Dispose();
+        _host = null;
+
+        if (_app is not null)
+        {
+            await _app.DisposeAsync();
+            _app = null;
+        }
+
+        _standaloneLoggerFactory?.Dispose();
+    }
+
+    // ─── Internal build logic (called by AspireIntegrationTestHostBuilder) ───
+
+    internal async Task BuildInternalAsync()
     {
         // ── 1. Mode detection ────────────────────────────────────────────
         IsStandalone = string.IsNullOrEmpty(
@@ -182,37 +261,6 @@ public sealed class AspireIntegrationTestHost : IAsyncDisposable
         _options.ConfigureHostBuilder?.Invoke(hostBuilder);
 
         _host = hostBuilder.Build();
-        await _host.StartAsync();
-    }
-
-    /// <summary>
-    /// Creates an <see cref="HttpClient"/> for the named resource, backed by the
-    /// <see cref="IHttpClientFactory"/> registered in the lightweight host.
-    /// </summary>
-    public HttpClient CreateClient(string serviceName)
-    {
-        var factory = Host.Services.GetRequiredService<IHttpClientFactory>();
-        return factory.CreateClient(serviceName);
-    }
-
-    /// <inheritdoc />
-    public async ValueTask DisposeAsync()
-    {
-        if (_host is not null)
-        {
-            await _host.StopAsync();
-            _host.Dispose();
-            _host = null;
-        }
-
-        if (_app is not null)
-        {
-            await _app.StopAsync();
-            await _app.DisposeAsync();
-            _app = null;
-        }
-
-        _standaloneLoggerFactory?.Dispose();
     }
 
     // ─── Private helpers ─────────────────────────────────────────────────
