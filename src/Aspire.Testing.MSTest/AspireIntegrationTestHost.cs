@@ -1,11 +1,10 @@
+using System.Collections.Concurrent;
 using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using OpenTelemetry;
-using OpenTelemetry.Trace;
 
 namespace Aspire.Testing.MSTest;
 
@@ -35,6 +34,8 @@ public sealed class AspireIntegrationTestHost : IHost, IAsyncDisposable
     private DistributedApplication? _app;
     private IHost? _host;
     private ILoggerFactory? _standaloneLoggerFactory;
+    private ConcurrentQueue<string>? _startupLogBuffer;
+    private TestContextLoggerProvider? _startupLogProvider;
     private bool _started;
 
     internal AspireIntegrationTestHost(AspireIntegrationTestHostOptions options)
@@ -47,6 +48,25 @@ public sealed class AspireIntegrationTestHost : IHost, IAsyncDisposable
     /// detection environment variable is absent or empty).
     /// </summary>
     public bool IsStandalone { get; private set; }
+
+    /// <summary>
+    /// Returns the log output captured during startup and switches subsequent
+    /// logging to <see cref="Console.Out"/> where MSTest captures it per-test.
+    /// Call this at the <strong>end</strong> of <c>[ClassInitialize]</c> and write
+    /// the result to <c>TestContext</c> so startup logs appear in the class-level
+    /// test detail summary rather than leaking into the first test method.
+    /// </summary>
+    /// <returns>
+    /// The buffered startup log text, or <see cref="string.Empty"/> when not in
+    /// standalone mode.
+    /// </returns>
+    public string FlushStartupLog()
+    {
+        _startupLogProvider?.StopBuffering();
+        return _startupLogBuffer is not null
+            ? string.Join(Environment.NewLine, _startupLogBuffer)
+            : string.Empty;
+    }
 
     /// <summary>
     /// The service provider from the lightweight host, providing access to
@@ -168,15 +188,22 @@ public sealed class AspireIntegrationTestHost : IHost, IAsyncDisposable
             // Allow the consumer to further configure the builder.
             _options.ConfigureStandaloneBuilder?.Invoke(testingBuilder);
 
-            // Wire a forwarding logger provider + resource-stdout log filter so
-            // that resource output is visible in the test runner.
+            // Route all DA logs (including resource stdout) through our synchronous
+            // TestContextLoggerProvider so they are written immediately rather than
+            // arriving asynchronously via the DA's default console logger.
+            // A buffer captures the startup output so the test can later write it
+            // to TestContext for proper attribution in the test detail summary.
+            _startupLogBuffer = new ConcurrentQueue<string>();
+            _startupLogProvider = new TestContextLoggerProvider(_startupLogBuffer);
             _standaloneLoggerFactory = LoggerFactory.Create(logging =>
             {
                 logging.SetMinimumLevel(LogLevel.Information);
+                logging.AddProvider(_startupLogProvider);
             });
 
             testingBuilder.Services.AddLogging(logging =>
             {
+                logging.ClearProviders();
                 logging.AddProvider(new ForwardingLoggerProvider(_standaloneLoggerFactory));
                 logging.AddFilter("Aspire.Hosting.Dcp", LogLevel.Warning);
             });
@@ -203,7 +230,7 @@ public sealed class AspireIntegrationTestHost : IHost, IAsyncDisposable
         }
 
         // ── 3. Lightweight IHost construction ────────────────────────────
-        var hostBuilder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder();
+        var hostBuilder = Host.CreateApplicationBuilder();
 
         if (!IsStandalone)
         {
@@ -212,11 +239,11 @@ public sealed class AspireIntegrationTestHost : IHost, IAsyncDisposable
         }
         else
         {
-            // Replace the default console logger with a minimal provider that writes
-            // to Console.Out — MSTest captures stdout per-test and shows it in the
-            // test detail summary.
+            // Reuse the same buffered provider so that lightweight-host logs
+            // (e.g. Lifetime "Application started") are also captured during
+            // ClassInitialize and don't leak into the first test method.
             hostBuilder.Logging.ClearProviders();
-            hostBuilder.Logging.AddProvider(new TestContextLoggerProvider());
+            hostBuilder.Logging.AddProvider(_startupLogProvider!);
         }
 
         // Register OpenTelemetry tracing for the requested activity sources.

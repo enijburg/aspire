@@ -132,6 +132,16 @@ public sealed class JwtAuthApiTests
         _logger = _testHost.Services.GetRequiredService<ILoggerFactory>().CreateLogger<JwtAuthApiTests>();
         _logger.LogInformation("Test host started in {Mode} mode.",
             _testHost.IsStandalone ? "standalone" : "AppHost");
+
+        // Flush all startup logs to TestContext and switch to per-test Console.Out
+        // logging. This must be the last thing in ClassInitialize so that all startup
+        // output (DA lifecycle, resource stdout, Lifetime, and test-host ready) is
+        // captured and none of it leaks into the first test method.
+        var startupLog = _testHost.FlushStartupLog();
+        if (startupLog.Length > 0)
+        {
+            context.WriteLine(startupLog);
+        }
     }
 
     [ClassCleanup]

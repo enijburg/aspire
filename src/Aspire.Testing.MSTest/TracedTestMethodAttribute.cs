@@ -34,7 +34,7 @@ public sealed class TracedTestMethodAttribute(
     /// <inheritdoc />
     public override async Task<TestResult[]> ExecuteAsync(ITestMethod testMethod)
     {
-        using var activity = TestActivitySource.StartActivity(testMethod.TestMethodName, ActivityKind.Internal);
+        using var activity = TestActivitySource.StartActivity(testMethod.TestMethodName);
         activity?.SetTag("test.name", testMethod.TestMethodName);
         activity?.SetTag("test.expected_status_code", (int)ExpectedStatusCode);
         activity?.SetTag("test.expects_success", (int)ExpectedStatusCode < 400);
