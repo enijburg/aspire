@@ -14,4 +14,14 @@
     <ProjectReference Include="..\..\..\src\Aspire.Hosting.DevJwt\Aspire.Hosting.DevJwt.csproj" IsAspireProjectResource="false" />
   </ItemGroup>
 
+  <!--
+    The test project is added at runtime via AddProject("tests", path) because a typed
+    AddProject<TProject> would require a ProjectReference here, creating a circular
+    dependency (Tests already references this AppHost). Build it explicitly so that a
+    clean checkout + F5 produces the test binary before the resource is started.
+  -->
+  <Target Name="BuildPathReferencedProjects" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+    <MSBuild Projects="..\JwtAuth.Tests\JwtAuth.Tests.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
+  </Target>
+
 </Project>
