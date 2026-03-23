@@ -17,12 +17,16 @@
   <!--
     The test project is added at runtime via AddProject("tests", path) because a typed
     AddProject<TProject> would require a ProjectReference here, creating a circular
-    dependency (Tests already references this AppHost). Build it explicitly so that a
-    clean checkout + F5 produces the test binary before the resource is started.
-  
-  <Target Name="BuildPathReferencedProjects" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
-    <MSBuild Projects="..\JwtAuth.Tests\JwtAuth.Tests.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
-  </Target>
+    dependency (Tests already references this AppHost).
+
+    We use Exec (out-of-process dotnet build) instead of the MSBuild task to avoid the
+    in-process circular-dependency error. The guard property BuildingFromAppHost is
+    propagated as a global property, so when the test project transitively builds *this*
+    AppHost the target is skipped, breaking the cycle.
   -->
+  <Target Name="BuildPathReferencedProjects" AfterTargets="Build"
+          Condition="'$(DesignTimeBuild)' != 'true' AND '$(BuildingFromAppHost)' != 'true'">
+    <Exec Command='dotnet build "$(MSBuildThisFileDirectory)..\JwtAuth.Tests\JwtAuth.Tests.csproj" -c $(Configuration) -p:BuildingFromAppHost=true' />
+  </Target>
 
 </Project>
