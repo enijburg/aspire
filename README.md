@@ -39,6 +39,30 @@ Key features:
 - Dev-cert bypass for HTTPS endpoints with self-signed certificates
 - Startup log buffering with `FlushStartupLog()` for proper test output attribution
 
+### After startup
+
+![Resources](docs/assets/JWTScreenshot1.png)
+
+### Executing tests can be done repeatedly by clicking the manual start button, this works both in debug as in normal execution.
+
+![Traces](docs/assets/JWTScreenshot2.png)
+
+Test expectations and outcomes are logged as details
+
+![Trace details](docs/assets/JWTScreenshot6.png)
+
+Full structured logging from tests
+
+![Structured logs](docs/assets/JWTScreenshot3.png)
+
+Console logs in Aspire show full test output
+
+![Console logging](docs/assets/JWTScreenshot4.png)
+
+Executing the same tests from the Test Explorer in Visual Studio gives the same results. This can be used to run integration tests in the pipelines.
+
+![Test Runner](docs/assets/JWTScreenshot5.png)
+
 ## AspireGroupSupport
 
 This project demonstrates group aggregation of child resource with combined states. It uses the custom extensions from this repository with services that watch child resources, compute an aggregate status (e.g., Running, Starting, Finished), and publish updates to parent resources.
