@@ -281,4 +281,4 @@ builder.AddProject<Projects.JwtAuth_Tests>("tests")
 ## Prerequisites
 
 - .NET 10 SDK
-- Aspire AppHost SDK 13.1.2
+- Aspire AppHost SDK 13.2.0
