@@ -56,4 +56,6 @@ app.MapGet("/me", [Authorize(Roles = "api-two")] (ClaimsPrincipal user) =>
 .WithName("GetCurrentUser")
 .WithSummary("Get the current authenticated user (requires bearer token)");
 
+app.MapDefaultEndpoints();
+
 await app.RunAsync();
