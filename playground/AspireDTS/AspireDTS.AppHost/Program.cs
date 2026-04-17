@@ -11,7 +11,7 @@ var dts = builder.AddContainer("dts-emulator", "mcr.microsoft.com/dts/dts-emulat
 var sql = builder.AddSqlServer("sql")
     .WithLifetime(ContainerLifetime.Persistent);
 
-var db = sql.AddDatabase("aspiradts");
+var db = sql.AddDatabase("aspiredts");
 
 var grpcEndpoint = dts.GetEndpoint("grpc");
 var dtsConnectionString = ReferenceExpression.Create($"Endpoint=http://{grpcEndpoint.Property(EndpointProperty.Host)}:{grpcEndpoint.Property(EndpointProperty.Port)};TaskHub=default;Authentication=None");
