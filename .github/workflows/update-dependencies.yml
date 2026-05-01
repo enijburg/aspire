@@ -21,22 +21,21 @@ jobs:
         with:
           dotnet-version: '10.x'
 
-      - name: Install Aspire CLI
-        run: dotnet tool install -g Microsoft.DotNet.Aspire.Cli
+      - name: Install dotnet-outdated
+        run: dotnet tool install -g dotnet-outdated-tool
 
       - name: Update Aspire AppHosts
         run: |
-          grep -rl 'Aspire.AppHost.Sdk' --include='*.csproj' | while read -r csproj; do
-            echo "Updating Aspire AppHost: $csproj"
-            aspire update --project-path "$csproj"
+          LATEST=$(curl -s "https://api.nuget.org/v3-flatcontainer/aspire.apphost.sdk/index.json" \
+            | python3 -c "import json,sys; vs=json.load(sys.stdin)['versions']; print(next(v for v in reversed(vs) if '-' not in v))")
+          echo "Latest Aspire.AppHost.Sdk: $LATEST"
+          grep -rl 'Aspire\.AppHost\.Sdk' --include='*.csproj' | while read -r csproj; do
+            echo "Updating Aspire AppHost SDK in: $csproj"
+            sed -i -E "s|Sdk=\"Aspire\.AppHost\.Sdk/[^\"]+\"|Sdk=\"Aspire.AppHost.Sdk/$LATEST\"|g" "$csproj"
           done
 
       - name: Update NuGet packages
-        run: |
-          find . -name '*.csproj' | while read -r csproj; do
-            echo "Updating packages in: $csproj"
-            dotnet package update --project "$csproj"
-          done
+        run: dotnet outdated --upgrade --no-restore || true
 
       - name: Commit changes
         id: commit
@@ -61,8 +60,8 @@ jobs:
           gh pr create \
             --title "chore: update dependencies" \
             --body "Automated dependency update:
-          - Updated Aspire AppHost SDK versions via \`aspire update\`
-          - Updated NuGet packages via \`dotnet package update\`" \
+          - Updated Aspire AppHost SDK versions via NuGet API
+          - Updated NuGet packages via \`dotnet outdated\`" \
             --base main \
             --head automated/update-dependencies \
             --label dependencies \
