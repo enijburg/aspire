@@ -33,9 +33,29 @@ jobs:
             echo "Updating Aspire AppHost SDK in: $csproj"
             sed -i -E "s|Sdk=\"Aspire\.AppHost\.Sdk/[^\"]+\"|Sdk=\"Aspire.AppHost.Sdk/$LATEST\"|g" "$csproj"
           done
+          # Update Aspire package versions in Directory.Packages.props to stay in sync with the SDK
+          for pkg in Aspire.Hosting Aspire.Hosting.SqlServer Aspire.Hosting.Testing; do
+            pkg_lower=$(echo "$pkg" | tr '[:upper:]' '[:lower:]')
+            pkg_latest=$(curl -s "https://api.nuget.org/v3-flatcontainer/${pkg_lower}/index.json" \
+              | python3 -c "import json,sys; vs=json.load(sys.stdin)['versions']; print(next(v for v in reversed(vs) if '-' not in v))" 2>/dev/null || echo "")
+            if [ -n "$pkg_latest" ]; then
+              echo "Updating $pkg to $pkg_latest in Directory.Packages.props"
+              sed -i -E "s|Include=\"${pkg}\" Version=\"[^\"]+\"|Include=\"${pkg}\" Version=\"${pkg_latest}\"|g" Directory.Packages.props
+            fi
+          done
 
       - name: Update NuGet packages
-        run: dotnet outdated --upgrade
+        run: |
+          # Run dotnet outdated on individual non-AppHost project files to avoid restore
+          # failures caused by package source mapping in AppHost projects (which use the
+          # Aspire.AppHost.Sdk and depend on platform-specific Aspire infrastructure packages).
+          # With Central Package Management (Directory.Packages.props), updating any project
+          # that references a centrally-versioned package updates the version for all projects.
+          find . -name "*.csproj" \
+            | grep -v '\.AppHost\.' \
+            | while read -r f; do
+                dotnet outdated --upgrade "$f"
+              done
 
       - name: Commit changes
         id: commit
