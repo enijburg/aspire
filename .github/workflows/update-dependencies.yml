@@ -63,6 +63,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          gh pr view automated/update-dependencies --json number >/dev/null 2>&1 || \
           gh pr create \
             --title "chore: update dependencies" \
             --body "Automated dependency update:
@@ -70,5 +71,4 @@ jobs:
           - Updated NuGet packages via \`dotnet outdated\`" \
             --base main \
             --head automated/update-dependencies \
-            --label dependencies \
-            || true  # no-op if PR already exists
+            --label dependencies 
