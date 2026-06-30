@@ -84,12 +84,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           BASE_BRANCH="${{ github.event.repository.default_branch }}"
-          gh pr view automated/update-dependencies --json number >/dev/null 2>&1 || \
-          gh pr create \
-            --title "chore: update dependencies" \
-            --body "Automated dependency update:
+          # Only treat an OPEN PR as "already exists"; a merged/closed PR should not block creating a new one.
+          existing=$(gh pr list --state open --head automated/update-dependencies --json number --jq 'length')
+          if [ "$existing" -gt 0 ]; then
+            echo "An open PR already exists for automated/update-dependencies; skipping creation."
+          else
+            gh pr create \
+              --title "chore: update dependencies" \
+              --body "Automated dependency update:
           - Updated Aspire AppHost SDK versions via NuGet API
           - Updated NuGet packages via \`dotnet outdated\`" \
-            --base "$BASE_BRANCH" \
-            --head automated/update-dependencies \
-            --label dependencies
+              --base "$BASE_BRANCH" \
+              --head automated/update-dependencies \
+              --label dependencies
+          fi
