@@ -52,6 +52,12 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Ensure dependencies label exists
+        run: |
+          gh label create dependencies --color 0E8A16 --description "Dependency updates" || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create pull request
         if: steps.commit.outputs.changed == 'true'
         env:
