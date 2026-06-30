@@ -35,7 +35,7 @@ jobs:
           done
 
       - name: Update NuGet packages
-        run: dotnet outdated --upgrade || true
+        run: dotnet outdated --upgrade
 
       - name: Commit changes
         id: commit
