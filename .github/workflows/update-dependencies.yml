@@ -35,7 +35,7 @@ jobs:
           done
 
       - name: Update NuGet packages
-        run: dotnet outdated --upgrade --no-restore || true
+        run: dotnet outdated --upgrade || true
 
       - name: Commit changes
         id: commit
@@ -71,4 +71,4 @@ jobs:
           - Updated NuGet packages via \`dotnet outdated\`" \
             --base main \
             --head automated/update-dependencies \
-            --label dependencies 
+            --label dependencies
