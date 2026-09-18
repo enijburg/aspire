@@ -14,8 +14,8 @@
     <!-- JWT Authentication packages -->
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
-    <!-- Pin transitive Microsoft.OpenApi to a patched version (GHSA-v5pm-xwqc-g5wc) -->
-    <PackageVersion Include="Microsoft.OpenApi" Version="3.10.2" />
+    <!-- Pin transitive Microsoft.OpenApi to a patched version (GHSA-v5pm-xwqc-g5wc) within Microsoft.AspNetCore.OpenApi's supported range (>= 2.12.0 && < 3.0.0) -->
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.12.2" />
     <!-- Common Microsoft.Extensions packages for .NET 10 -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
