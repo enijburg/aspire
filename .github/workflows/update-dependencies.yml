@@ -51,10 +51,15 @@ jobs:
           # Aspire.AppHost.Sdk and depend on platform-specific Aspire infrastructure packages).
           # With Central Package Management (Directory.Packages.props), updating any project
           # that references a centrally-versioned package updates the version for all projects.
+          #
+          # AppHost projects are detected by their Sdk attribute (Aspire.AppHost.Sdk) rather
+          # than by filename, since not all AppHost projects follow a "*.AppHost.csproj"
+          # naming convention (e.g. AspireGroupSupport.csproj).
           find . -name "*.csproj" \
-            | grep -v '\.AppHost\.' \
             | while read -r f; do
-                dotnet outdated --upgrade "$f"
+                if ! grep -q 'Sdk="Aspire\.AppHost\.Sdk' "$f"; then
+                  dotnet outdated --upgrade "$f"
+                fi
               done
 
       - name: Commit changes
