@@ -308,8 +308,8 @@ public static partial class SharedDevJwtExtensions
         IResourceBuilder<DevJwtAuthorityResource> resourceBuilder,
         ExecuteCommandContext context)
     {
-        var interactionService = context.ServiceProvider.GetRequiredService<IInteractionService>();
-        var loggerService = context.ServiceProvider.GetRequiredService<ResourceLoggerService>();
+        var interactionService = context.Services.GetRequiredService<IInteractionService>();
+        var loggerService = context.Services.GetRequiredService<ResourceLoggerService>();
         var logger = loggerService.GetLogger(resourceBuilder.Resource);
 
         var config = resourceBuilder.ApplicationBuilder.Configuration;
@@ -480,7 +480,7 @@ public static partial class SharedDevJwtExtensions
 
             WriteSecret(resourceBuilder.ApplicationBuilder, options.CurrentTokenSecretName, token);
 
-            var notificationService = context.ServiceProvider.GetRequiredService<ResourceNotificationService>();
+            var notificationService = context.Services.GetRequiredService<ResourceNotificationService>();
             await notificationService.PublishUpdateAsync(resourceBuilder.Resource, previous =>
                 previous with
                 {
