@@ -2,6 +2,8 @@
   <PropertyGroup>
     <!-- Enable central package management -->
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Allow PackageVersion entries to pin transitive dependency versions (e.g. security fixes) -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
     <!-- Aspire hosting extensions -->
@@ -14,12 +16,14 @@
     <!-- JWT Authentication packages -->
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
+    <!-- Pin transitive Microsoft.OpenApi to a patched version (GHSA-v5pm-xwqc-g5wc) -->
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
     <!-- Common Microsoft.Extensions packages for .NET 10 -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.10" />
     <!-- JWT token generation -->
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.22.0" />
     <!-- Service defaults -->
