@@ -21,10 +21,7 @@ jobs:
         with:
           dotnet-version: '10.x'
 
-      - name: Install dotnet-outdated
-        run: dotnet tool install -g dotnet-outdated-tool
-
-      - name: Update Aspire AppHosts
+      - name: Update Aspire AppHost SDK references
         run: |
           LATEST=$(curl -s "https://api.nuget.org/v3-flatcontainer/aspire.apphost.sdk/index.json" \
             | python3 -c "import json,sys; vs=json.load(sys.stdin)['versions']; print(next(v for v in reversed(vs) if '-' not in v))")
@@ -33,41 +30,61 @@ jobs:
             echo "Updating Aspire AppHost SDK in: $csproj"
             sed -i -E "s|Sdk=\"Aspire\.AppHost\.Sdk/[^\"]+\"|Sdk=\"Aspire.AppHost.Sdk/$LATEST\"|g" "$csproj"
           done
-          # Update Aspire package versions in Directory.Packages.props to stay in sync with the SDK
-          for pkg in Aspire.Hosting Aspire.Hosting.SqlServer Aspire.Hosting.Testing; do
-            pkg_lower=$(echo "$pkg" | tr '[:upper:]' '[:lower:]')
-            pkg_latest=$(curl -s "https://api.nuget.org/v3-flatcontainer/${pkg_lower}/index.json" \
-              | python3 -c "import json,sys; vs=json.load(sys.stdin)['versions']; print(next(v for v in reversed(vs) if '-' not in v))" 2>/dev/null || echo "")
-            if [ -n "$pkg_latest" ]; then
-              echo "Updating $pkg to $pkg_latest in Directory.Packages.props"
-              sed -i -E "s|Include=\"${pkg}\" Version=\"[^\"]+\"|Include=\"${pkg}\" Version=\"${pkg_latest}\"|g" Directory.Packages.props
-            fi
-          done
 
-      - name: Update NuGet packages
+      - name: Update centrally-managed package versions
         run: |
-          # Run dotnet outdated on individual non-AppHost project files to avoid restore
-          # failures caused by package source mapping in AppHost projects (which use the
-          # Aspire.AppHost.Sdk and depend on platform-specific Aspire infrastructure packages).
-          # With Central Package Management (Directory.Packages.props), updating any project
-          # that references a centrally-versioned package updates the version for all projects.
-          #
-          # AppHost projects are detected by their Sdk attribute (Aspire.AppHost.Sdk) rather
-          # than by filename, since not all AppHost projects follow a "*.AppHost.csproj"
-          # naming convention (e.g. AspireGroupSupport.csproj).
-          find . -name "*.csproj" \
-            | while read -r f; do
-                if ! grep -q 'Sdk="Aspire\.AppHost\.Sdk' "$f"; then
-                  dotnet outdated --upgrade "$f"
-                fi
-              done
+          # Walk every PackageVersion entry in Directory.Packages.props and update it to the
+          # latest stable version available on NuGet. Entries pinned to an exact/bracketed
+          # version (e.g. Version="[1.2.3]") are intentionally left untouched (e.g. security
+          # pins such as Microsoft.OpenApi above).
+          props="Directory.Packages.props"
+          python3 - "$props" <<'PY'
+          import re
+          import sys
+          import urllib.request
+
+          props_path = sys.argv[1]
+          with open(props_path, "r", encoding="utf-8") as f:
+              content = f.read()
+
+          pattern = re.compile(r'Include="([^"]+)"\s+Version="([^"]+)"')
+
+          def latest_version(package_id: str) -> str | None:
+              url = f"https://api.nuget.org/v3-flatcontainer/{package_id.lower()}/index.json"
+              try:
+                  with urllib.request.urlopen(url, timeout=30) as resp:
+                      import json
+                      versions = json.load(resp)["versions"]
+              except Exception as exc:
+                  print(f"::warning::Could not resolve latest version for '{package_id}': {exc}")
+                  return None
+              stable = [v for v in versions if "-" not in v]
+              return stable[-1] if stable else None
+
+          def replace(match: re.Match) -> str:
+              package_id, current_version = match.group(1), match.group(2)
+              if re.fullmatch(r"\s*\[.*\]\s*", current_version):
+                  print(f"Skipping {package_id}; version is pinned ({current_version})")
+                  return match.group(0)
+
+              latest = latest_version(package_id)
+              if latest and latest != current_version:
+                  print(f"Updating {package_id} from {current_version} to {latest} in {props_path}")
+                  return f'Include="{package_id}" Version="{latest}"'
+              return match.group(0)
+
+          content = pattern.sub(replace, content)
+
+          with open(props_path, "w", encoding="utf-8") as f:
+              f.write(content)
+          PY
 
       - name: Validate restore
         run: |
-          # dotnet outdated upgrades each package independently and does not check
-          # cross-package dependency constraints (e.g. Microsoft.AspNetCore.OpenApi
-          # requiring Microsoft.OpenApi >= 2.12.0 && < 3.0.0). A bad bump previously
-          # merged to main (see PR #18) because nothing validated restore before the
+          # Updating package versions independently does not check cross-package
+          # dependency constraints (e.g. Microsoft.AspNetCore.OpenApi requiring
+          # Microsoft.OpenApi >= 2.12.0 && < 3.0.0). A bad bump previously merged
+          # to main (see PR #18) because nothing validated restore before the
           # automated PR was created. Fail the workflow here instead of proposing a
           # PR that won't build.
           find . -name "*.csproj" -print0 | xargs -0 -n1 dotnet restore
@@ -108,7 +125,7 @@ jobs:
               --title "chore: update dependencies" \
               --body "Automated dependency update:
           - Updated Aspire AppHost SDK versions via NuGet API
-          - Updated NuGet packages via \`dotnet outdated\`" \
+          - Updated centrally-managed NuGet package versions in Directory.Packages.props (pinned/bracketed versions left untouched)" \
               --base "$BASE_BRANCH" \
               --head automated/update-dependencies \
               --label dependencies
