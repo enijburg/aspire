@@ -11,6 +11,8 @@
 
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.SqlServer" />
+    <PackageReference Include="MessagePack" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <ProjectReference Include="..\AspireDTS.Worker\AspireDTS.Worker.csproj" />
     <ProjectReference Include="..\AspireDTS.Client\AspireDTS.Client.csproj" />
   </ItemGroup>
