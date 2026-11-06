@@ -5,39 +5,38 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Aspire hosting extensions -->
-    <PackageVersion Include="Aspire.Hosting" Version="13.6.1" />
-    <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Hosting" Version="13.6.4" />
+    <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.6.4" />
     <!-- Azure Durable Task Scheduler -->
-    <PackageVersion Include="Microsoft.DurableTask.Client.AzureManaged" Version="1.26.0" />
-    <PackageVersion Include="Microsoft.DurableTask.Worker.AzureManaged" Version="1.26.0" />
+    <PackageVersion Include="Microsoft.DurableTask.Client.AzureManaged" Version="1.28.0" />
+    <PackageVersion Include="Microsoft.DurableTask.Worker.AzureManaged" Version="1.28.0" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.1.1" />
     <!-- JWT Authentication packages -->
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
     <!-- Pin transitive Microsoft.OpenApi to a patched version (GHSA-v5pm-xwqc-g5wc) within Microsoft.AspNetCore.OpenApi's supported range (>= 2.12.0 && < 3.0.0).
          Bracketed as an exact version so the update-dependencies workflow's skip-logic for pinned versions leaves it untouched. -->
     <PackageVersion Include="Microsoft.OpenApi" Version="[2.12.2]" />
     <!-- Common Microsoft.Extensions packages for .NET 10 -->
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.12" />
-    <!-- Pin MessagePack to the first patched 2.x version; keep the Aspire dependency line. -->
-    <PackageVersion Include="MessagePack" Version="[2.5.303]" />
-    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.14" />
+    <PackageVersion Include="MessagePack" Version="3.1.12" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
     <!-- JWT token generation -->
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.23.0" />
     <!-- Service defaults -->
-    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
-    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.10.0" />
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.19.1" />
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.19.1" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.19.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.19.0" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.11.0" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.11.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.20.1" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.20.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.20.2" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.20.2" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.20.1" />
     <!-- Testing -->
-    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.6.1" />
-    <PackageVersion Include="MSTest" Version="4.5.1" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.6.4" />
+    <PackageVersion Include="MSTest" Version="4.5.2" />
   </ItemGroup>
 </Project>
